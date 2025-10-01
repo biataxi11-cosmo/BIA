@@ -16,6 +16,8 @@ import { useRouter } from 'next/navigation';
 import usePlacesAutocomplete, {
   getGeocode,
   getLatLng,
+  type HookReturn,
+  type Suggestion
 } from 'use-places-autocomplete';
 import { GoogleMap, Marker, DirectionsRenderer, useJsApiLoader } from '@react-google-maps/api';
 import { useAuth } from '@/contexts/auth-context';
@@ -290,7 +292,7 @@ export default function MapPage() {
   });
 
   // Dropoff autocomplete - now we need one for each dropoff input
-  const dropoffAutocompleteHooks = dropoffInputs.map((_, index) => {
+  const dropoffAutocompleteHooks: HookReturn[] = dropoffInputs.map((_, index) => {
     return usePlacesAutocomplete({
       callbackName: 'Function.prototype',
       requestOptions: {
@@ -881,14 +883,14 @@ export default function MapPage() {
                     )}
                     {dropoffAutocompleteHooks[index] && dropoffAutocompleteHooks[index].suggestions.status === 'OK' && (
                       <div className="absolute z-10 w-full mt-1 bg-card border rounded-md shadow-lg max-h-60 overflow-y-auto">
-                        {dropoffAutocompleteHooks[index].suggestions.data.map(({ place_id, structured_formatting }) => (
+                        {dropoffAutocompleteHooks[index].suggestions.data.map((suggestion: Suggestion) => (
                           <div
-                            key={place_id}
-                            onClick={() => handleDropoffSelect(index, structured_formatting.main_text + ', ' + structured_formatting.secondary_text)}
+                            key={suggestion.place_id}
+                            onClick={() => handleDropoffSelect(index, suggestion.structured_formatting.main_text + ', ' + suggestion.structured_formatting.secondary_text)}
                             className="p-3 hover:bg-accent cursor-pointer border-b last:border-b-0"
                           >
-                            <p className="font-medium">{structured_formatting.main_text}</p>
-                            <p className="text-sm text-muted-foreground">{structured_formatting.secondary_text}</p>
+                            <p className="font-medium">{suggestion.structured_formatting.main_text}</p>
+                            <p className="text-sm text-muted-foreground">{suggestion.structured_formatting.secondary_text}</p>
                           </div>
                         ))}
                       </div>
@@ -1010,7 +1012,7 @@ export default function MapPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Flag className="h-4 w-4 text-red-500" />
-                  <span className="text-sm truncate">{dropoffValue || 'Destination'}</span>
+                  <span className="text-sm truncate">{dropoffInputs[0] || 'Destination'}</span>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2 p-2 bg-secondary rounded-lg mb-4">

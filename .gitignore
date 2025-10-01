@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+*.log
 
 # debug
 npm-debug.log*
@@ -37,9 +38,28 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.genkit/*
-.env*
+# environment variables
+.env
+.env*.local
 
-# firebase
+# Firebase
 firebase-debug.log
 firestore-debug.log
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+
+# Patch package
+patches/
+
+# Genkit
+.genkit/*
