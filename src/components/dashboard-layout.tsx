@@ -44,7 +44,7 @@ export default function DashboardLayout({
       <header className="sticky top-0 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6 z-10">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <Logo className="h-8 w-8" />
-          <span className="hidden md:inline-block">BIA TaxiGo</span>
+          <span className="hidden md:inline-block">BIA Taxi</span>
         </Link>
         
         <div className="flex-1 flex justify-center">
