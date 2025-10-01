@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Rides collection - users can read/write their own rides
+    match /rides/{rideId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Drivers collection - users can read/write their own driver data
+    match /drivers/{driverId} {
+      allow read, write: if request.auth != null && request.auth.uid == driverId;
+    }
+    
+    // Public data that anyone can read
+    match /public/{document=**} {
+      allow read: if true;
+    }
+  }
+}

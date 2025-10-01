@@ -1,0 +1,20 @@
+{
+  "name": "BIA TaxiGo",
+  "short_name": "BIA TaxiGo",
+  "description": "Your reliable ride-hailing service",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ],
+  "categories": ["transportation", "travel"],
+  "lang": "en",
+  "dir": "ltr"
+}
