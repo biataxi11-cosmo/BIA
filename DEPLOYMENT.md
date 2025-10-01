@@ -2,6 +2,16 @@
 
 This guide will help you deploy your BIA TaxiGo application to production with all necessary configurations and optimizations.
 
+## 🔒 Security Notice
+
+**Important**: This repository previously contained exposed API keys which have been removed. If you have deployed this application or used this guide before April 5, 2025, please:
+
+1. Rotate any API keys you may have used from this repository
+2. Update your deployment environment with new keys
+3. Check your application logs for any unauthorized usage
+
+See [SECURITY_NOTICE.md](SECURITY_NOTICE.md) for complete details on the security issue and remediation steps.
+
 ## 🚀 Quick Deployment (Vercel - Recommended)
 
 ### Prerequisites

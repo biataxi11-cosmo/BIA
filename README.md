@@ -13,6 +13,16 @@ A modern, full-stack ride-hailing application built with Next.js, Firebase, and 
 - **Type Safety**: Full TypeScript implementation
 - **Error Handling**: Comprehensive error boundaries and user feedback
 
+## 🔒 Security Notice
+
+**Important**: This repository previously contained exposed API keys which have been removed. If you have cloned this repository before April 5, 2025, please:
+
+1. Rotate any API keys you may have used from this repository
+2. Update your local environment with new keys following the setup instructions below
+3. Check your application logs for any unauthorized usage
+
+See [SECURITY_NOTICE.md](SECURITY_NOTICE.md) for complete details on the security issue and remediation steps.
+
 ## 🛠️ Tech Stack
 
 - **Frontend**: Next.js 15, React 18, TypeScript
