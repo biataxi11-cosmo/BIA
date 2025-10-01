@@ -275,7 +275,7 @@ export default function MapPage() {
     setOnlineDrivers(mockDrivers);
   }, []);
 
-  // Pickup autocomplete
+  // Single pickup autocomplete
   const {
     ready: pickupReady,
     value: pickupValue,
@@ -291,17 +291,61 @@ export default function MapPage() {
     initOnMount: isGoogleMapsLoaded,
   });
 
-  // Dropoff autocomplete - now we need one for each dropoff input
-  const dropoffAutocompleteHooks: HookReturn[] = dropoffInputs.map((_, index) => {
-    return usePlacesAutocomplete({
-      callbackName: 'Function.prototype',
-      requestOptions: {
-        componentRestrictions: { country: 'lk' }, // Restrict to Sri Lanka
-      },
-      debounce: 300,
-      initOnMount: isGoogleMapsLoaded,
-    });
+  // Create a fixed array of dropoff autocomplete hooks (max 5 dropoff points)
+  const maxDropoffs = 5;
+  const dropoffAutocomplete1 = usePlacesAutocomplete({
+    callbackName: 'Function.prototype',
+    requestOptions: {
+      componentRestrictions: { country: 'lk' },
+    },
+    debounce: 300,
+    initOnMount: isGoogleMapsLoaded,
   });
+  
+  const dropoffAutocomplete2 = usePlacesAutocomplete({
+    callbackName: 'Function.prototype',
+    requestOptions: {
+      componentRestrictions: { country: 'lk' },
+    },
+    debounce: 300,
+    initOnMount: isGoogleMapsLoaded,
+  });
+  
+  const dropoffAutocomplete3 = usePlacesAutocomplete({
+    callbackName: 'Function.prototype',
+    requestOptions: {
+      componentRestrictions: { country: 'lk' },
+    },
+    debounce: 300,
+    initOnMount: isGoogleMapsLoaded,
+  });
+  
+  const dropoffAutocomplete4 = usePlacesAutocomplete({
+    callbackName: 'Function.prototype',
+    requestOptions: {
+      componentRestrictions: { country: 'lk' },
+    },
+    debounce: 300,
+    initOnMount: isGoogleMapsLoaded,
+  });
+  
+  const dropoffAutocomplete5 = usePlacesAutocomplete({
+    callbackName: 'Function.prototype',
+    requestOptions: {
+      componentRestrictions: { country: 'lk' },
+    },
+    debounce: 300,
+    initOnMount: isGoogleMapsLoaded,
+  });
+
+  // Array of dropoff autocomplete hooks
+  const dropoffAutocompleteHooks = [
+    dropoffAutocomplete1,
+    dropoffAutocomplete2,
+    dropoffAutocomplete3,
+    dropoffAutocomplete4,
+    dropoffAutocomplete5
+  ];
 
   const handlePickupInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPickupValue(e.target.value);
@@ -311,6 +355,11 @@ export default function MapPage() {
     const newDropoffInputs = [...dropoffInputs];
     newDropoffInputs[index] = e.target.value;
     setDropoffInputs(newDropoffInputs);
+    
+    // Update the corresponding autocomplete hook
+    if (dropoffAutocompleteHooks[index]) {
+      dropoffAutocompleteHooks[index].setValue(e.target.value);
+    }
   };
 
   // Handle when user finishes typing in pickup field (e.g., onBlur)
@@ -385,7 +434,9 @@ export default function MapPage() {
 
   // Function to add a new dropoff field
   const addDropoffField = () => {
-    setDropoffInputs([...dropoffInputs, '']);
+    if (dropoffInputs.length < maxDropoffs) {
+      setDropoffInputs([...dropoffInputs, '']);
+    }
   };
 
   // Function to remove a dropoff field
@@ -398,6 +449,11 @@ export default function MapPage() {
       const newDropoffs = [...dropoffs];
       newDropoffs.splice(index, 1);
       setDropoffs(newDropoffs);
+      
+      // Clear the autocomplete value for the removed field
+      if (dropoffAutocompleteHooks[index]) {
+        dropoffAutocompleteHooks[index].setValue('');
+      }
     }
   };
 
@@ -857,7 +913,7 @@ export default function MapPage() {
                       placeholder={`Enter destination ${index + 1}`}
                       className="pl-10 pr-16" // Increased padding for both buttons
                     />
-                    {index === 0 && (
+                    {index === 0 && dropoffInputs.length < maxDropoffs && (
                       <Button
                         type="button"
                         variant="ghost"
@@ -898,8 +954,8 @@ export default function MapPage() {
                   </div>
                 ))}
                 
-                {/* Show Add Button if no extra fields yet */}
-                {dropoffInputs.length === 1 && (
+                {/* Show Add Button if no extra fields yet and under limit */}
+                {dropoffInputs.length === 1 && dropoffInputs.length < maxDropoffs && (
                   <Button
                     variant="outline"
                     size="sm"
