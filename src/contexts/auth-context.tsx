@@ -7,6 +7,12 @@ import { auth, db } from '@/lib/firebase';
 
 export type UserRole = 'customer' | 'driver' | 'admin';
 
+interface EmergencyContact {
+  name: string;
+  phone: string;
+  relationship: string;
+}
+
 interface UserProfile {
   uid: string;
   email: string;
@@ -15,6 +21,11 @@ interface UserProfile {
   role: UserRole;
   createdAt: Date;
   updatedAt: Date;
+  fullName?: string;
+  phoneNumber?: string;
+  birthday?: string;
+  gender?: string;
+  emergencyContacts?: EmergencyContact[];
 }
 
 interface AuthContextType {
@@ -47,10 +58,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       
       if (userDoc.exists()) {
-        const userData = userDoc.data() as UserProfile;
-        setUserProfile(userData);
-        setRole(userData.role);
-        localStorage.setItem('userRole', userData.role);
+        const userData = userDoc.data();
+        // Convert Firestore timestamps to Date objects
+        const profile: UserProfile = {
+          uid: userData.uid || user.uid,
+          email: userData.email || user.email || '',
+          displayName: userData.displayName || user.displayName,
+          photoURL: userData.photoURL || user.photoURL,
+          role: userData.role || role || 'customer',
+          createdAt: userData.createdAt?.toDate ? userData.createdAt.toDate() : new Date(userData.createdAt),
+          updatedAt: userData.updatedAt?.toDate ? userData.updatedAt.toDate() : new Date(userData.updatedAt),
+          fullName: userData.fullName,
+          phoneNumber: userData.phoneNumber,
+          birthday: userData.birthday,
+          gender: userData.gender,
+          emergencyContacts: userData.emergencyContacts || [],
+        };
+        setUserProfile(profile);
+        setRole(profile.role);
+        localStorage.setItem('userRole', profile.role);
       } else {
         // Create new user profile if it doesn't exist
         const newProfile: UserProfile = {
@@ -61,6 +87,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           role: role || 'customer', // Default to customer
           createdAt: new Date(),
           updatedAt: new Date(),
+          emergencyContacts: [],
         };
         
         await setDoc(doc(db, 'users', user.uid), newProfile);
@@ -82,6 +109,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           role: storedRole,
           createdAt: new Date(),
           updatedAt: new Date(),
+          emergencyContacts: [],
         };
         setUserProfile(fallbackProfile);
         setRole(storedRole);

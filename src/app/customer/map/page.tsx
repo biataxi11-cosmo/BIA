@@ -45,10 +45,16 @@ type Driver = {
   isOnline: boolean;
 };
 
+// Add a new type for waypoints
+type Waypoint = {
+  location: LatLng;
+  stopover: boolean;
+};
+
 const MapContent = ({ 
   center, 
   pickup, 
-  dropoff, 
+  dropoffs, // Changed from single dropoff to array
   directions,
   isLoaded, 
   loadError,
@@ -58,7 +64,7 @@ const MapContent = ({
 }: { 
   center: { lat: number; lng: number }; 
   pickup: { lat: number; lng: number } | null;
-  dropoff: { lat: number; lng: number } | null;
+  dropoffs: Array<{ lat: number; lng: number; address?: string }>; // Updated to array
   directions: google.maps.DirectionsResult | null;
   isLoaded: boolean;
   loadError: Error | undefined;
@@ -93,7 +99,7 @@ const MapContent = ({
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
         center={center}
-        zoom={pickup || dropoff ? 15 : 10}
+        zoom={pickup || dropoffs.length > 0 ? 15 : 10}
         options={{
           disableDefaultUI: true,
           zoomControl: true,
@@ -109,14 +115,29 @@ const MapContent = ({
           strokeColor: "#FFFFFF",
           strokeWeight: 2,
         }} />}
-        {dropoff && <Marker position={dropoff} icon={{
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: "#FF0000",
-          fillOpacity: 1,
-          strokeColor: "#FFFFFF",
-          strokeWeight: 2,
-        }} />}
+        {/* Render all dropoff points with red markers */}
+        {dropoffs.map((dropoff, index) => (
+          dropoff && dropoff.lat !== 0 && dropoff.lng !== 0 ? (
+            <Marker 
+              key={index} 
+              position={{ lat: dropoff.lat, lng: dropoff.lng }} 
+              icon={{
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 10,
+                fillColor: "#FF0000",
+                fillOpacity: 1,
+                strokeColor: "#FFFFFF",
+                strokeWeight: 2,
+              }} 
+              label={{
+                text: (index + 1).toString(),
+                color: "white",
+                fontSize: "12px",
+                fontWeight: "bold"
+              }}
+            />
+          ) : null
+        ))}
         {directions && <DirectionsRenderer directions={directions} options={{
           polylineOptions: {
             strokeColor: '#0000FF',
@@ -156,7 +177,7 @@ const MapContent = ({
 const MapWithLoader = ({ 
   center, 
   pickup, 
-  dropoff, 
+  dropoffs, // Changed from single dropoff to array
   directions,
   apiKey,
   onlineDrivers,
@@ -165,7 +186,7 @@ const MapWithLoader = ({
 }: { 
   center: { lat: number; lng: number }; 
   pickup: { lat: number; lng: number } | null;
-  dropoff: { lat: number; lng: number } | null;
+  dropoffs: Array<{ lat: number; lng: number; address?: string }>; // Updated to array
   directions: google.maps.DirectionsResult | null;
   apiKey: string;
   onlineDrivers: Driver[];
@@ -182,7 +203,7 @@ const MapWithLoader = ({
     <MapContent 
       center={center} 
       pickup={pickup}
-      dropoff={dropoff}
+      dropoffs={dropoffs} // Pass array instead of single dropoff
       directions={directions}
       isLoaded={isLoaded} 
       loadError={loadError} 
@@ -215,7 +236,7 @@ export default function MapPage() {
   const router = useRouter();
   const { user, userProfile } = useAuth();
   const [pickup, setPickup] = useState<{ lat: number; lng: number } | null>(null);
-  const [dropoffs, setDropoffs] = useState<Array<{ lat: number; lng: number; address?: string }>>([]); // Array of dropoff points
+  const [dropoffs, setDropoffs] = useState<Array<{ lat: number; lng: number; address?: string }>>([{ lat: 0, lng: 0, address: '' }]); // Initialize with one empty dropoff
   const [tripStatus, setTripStatus] = useState<TripStatus>('selecting');
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [distance, setDistance] = useState<string | null>(null);
@@ -381,11 +402,15 @@ export default function MapPage() {
   // Handle when user finishes typing in dropoff field (e.g., onBlur)
   const handleDropoffBlur = (index: number) => {
     // Only geocode if the user hasn't selected from autocomplete and we have a value
-    if (dropoffInputs[index] && (dropoffs.length <= index || !dropoffs[index])) {
+    if (dropoffInputs[index] && (dropoffs.length <= index || !dropoffs[index] || !dropoffs[index].lat)) {
       getGeocode({ address: dropoffInputs[index] })
         .then((results) => {
           const { lat, lng } = getLatLng(results[0]);
           const newDropoffs = [...dropoffs];
+          // Ensure the array has enough elements
+          while (newDropoffs.length <= index) {
+            newDropoffs.push({ lat: 0, lng: 0 });
+          }
           newDropoffs[index] = { lat, lng, address: dropoffInputs[index] };
           setDropoffs(newDropoffs);
         })
@@ -424,6 +449,10 @@ export default function MapPage() {
       .then((results) => {
         const { lat, lng } = getLatLng(results[0]);
         const newDropoffs = [...dropoffs];
+        // Ensure the array has enough elements
+        while (newDropoffs.length <= index) {
+          newDropoffs.push({ lat: 0, lng: 0 });
+        }
         newDropoffs[index] = { lat, lng, address: description };
         setDropoffs(newDropoffs);
       })
@@ -432,10 +461,17 @@ export default function MapPage() {
       });
   };
 
-  // Function to add a new dropoff field
+  // Function to add a new dropoff field - only allowed when all existing fields are filled
   const addDropoffField = () => {
-    if (dropoffInputs.length < maxDropoffs) {
+    // Check if all existing fields are filled (not lat:0, lng:0)
+    const allFieldsFilled = dropoffs.every(d => d && d.lat !== 0 && d.lng !== 0);
+    
+    if (allFieldsFilled && dropoffInputs.length < maxDropoffs) {
       setDropoffInputs([...dropoffInputs, '']);
+      setDropoffs([...dropoffs, { lat: 0, lng: 0, address: '' }]); // Add empty dropoff object
+    } else if (!allFieldsFilled) {
+      // Alert user that they need to fill all fields first
+      alert("Please fill all existing destination fields before adding a new one.");
     }
   };
 
@@ -510,54 +546,45 @@ export default function MapPage() {
           }
         });
       } else if (selectingLocation === 'dropoff') {
-        // Add to the last dropoff field or create a new one if all are filled
-        const lastEmptyIndex = dropoffs.findIndex(d => !d.lat && !d.lng);
-        const indexToUse = lastEmptyIndex >= 0 ? lastEmptyIndex : dropoffs.length;
-        
-        // Update dropoff inputs
-        const newDropoffInputs = [...dropoffInputs];
-        if (indexToUse >= newDropoffInputs.length) {
-          newDropoffInputs.push('');
-        }
-        setDropoffInputs(newDropoffInputs);
-        
-        // Update dropoffs
-        const newDropoffs = [...dropoffs];
-        if (indexToUse >= newDropoffs.length) {
-          newDropoffs.push({ lat: 0, lng: 0 });
-        }
-        newDropoffs[indexToUse] = { ...newDropoffs[indexToUse], ...location };
-        setDropoffs(newDropoffs);
-        
-        // Reverse geocode to get address
+        // Reverse geocode to get address first
         const geocoder = new google.maps.Geocoder();
         geocoder.geocode({ location }, (results, status) => {
-          if (status === 'OK' && results && results[0]) {
-            const newDropoffInputs = [...dropoffInputs];
-            if (indexToUse >= newDropoffInputs.length) {
-              newDropoffInputs.push('');
-            }
-            newDropoffInputs[indexToUse] = results[0].formatted_address;
-            setDropoffInputs(newDropoffInputs);
-            
+          const address = status === 'OK' && results && results[0] 
+            ? results[0].formatted_address 
+            : `Lat: ${location.lat.toFixed(6)}, Lng: ${location.lng.toFixed(6)}`;
+          
+          // Check if we have an empty dropoff field we can use (fields without valid coordinates)
+          // Consider a field empty if it has lat:0 and lng:0 (our initial state)
+          let emptyIndex = dropoffs.findIndex(d => d && d.lat === 0 && d.lng === 0);
+          
+          if (emptyIndex !== -1) {
+            // Use existing empty field
             const newDropoffs = [...dropoffs];
-            if (indexToUse >= newDropoffs.length) {
-              newDropoffs.push({ lat: 0, lng: 0 });
-            }
-            newDropoffs[indexToUse] = { ...newDropoffs[indexToUse], address: results[0].formatted_address };
+            newDropoffs[emptyIndex] = { ...location, address };
             setDropoffs(newDropoffs);
-          } else {
+            
             const newDropoffInputs = [...dropoffInputs];
-            if (indexToUse >= newDropoffInputs.length) {
-              newDropoffInputs.push('');
-            }
-            newDropoffInputs[indexToUse] = `Lat: ${location.lat.toFixed(6)}, Lng: ${location.lng.toFixed(6)}`;
+            newDropoffInputs[emptyIndex] = address;
             setDropoffInputs(newDropoffInputs);
+          } else {
+            // Check if we can add a new field (only if all existing fields are filled and we haven't reached the limit)
+            const allFieldsFilled = dropoffs.every(d => d && d.lat !== 0 && d.lng !== 0);
+            if (allFieldsFilled && dropoffInputs.length < maxDropoffs) {
+              // Add new field for this dropoff
+              const newDropoffs = [...dropoffs, { ...location, address }];
+              setDropoffs(newDropoffs);
+              
+              const newDropoffInputs = [...dropoffInputs, address];
+              setDropoffInputs(newDropoffInputs);
+            } else if (!allFieldsFilled) {
+              // Alert user that they need to fill all fields first
+              alert("Please fill all existing destination fields before adding a new one.");
+            } else {
+              // Reached max dropoffs
+              console.log("Maximum number of destinations reached.");
+            }
           }
         });
-        
-        // Reset selecting location state
-        setSelectingLocation(null);
       }
     }
   };
@@ -565,30 +592,59 @@ export default function MapPage() {
   // Calculate directions when both pickup and dropoff are set
   useEffect(() => {
     if (pickup && dropoffs.length > 0 && apiKey) {
+      // Filter out any empty dropoff points
+      const validDropoffs = dropoffs.filter(d => d && d.lat && d.lng);
+      if (validDropoffs.length === 0) {
+        setDirections(null);
+        setDistance(null);
+        setDuration(null);
+        setCost(null);
+        return;
+      }
+      
       const directionsService = new google.maps.DirectionsService();
+      
+      // Create waypoints for all dropoffs except the last one
+      const waypoints: google.maps.DirectionsWaypoint[] = validDropoffs
+        .slice(0, -1) // All dropoffs except the last one
+        .map(dropoff => ({
+          location: new google.maps.LatLng(dropoff.lat, dropoff.lng),
+          stopover: true
+        }));
+
       directionsService.route(
         {
-          origin: pickup,
-          destination: dropoffs[dropoffs.length - 1],
+          origin: new google.maps.LatLng(pickup.lat, pickup.lng),
+          destination: new google.maps.LatLng(validDropoffs[validDropoffs.length - 1].lat, validDropoffs[validDropoffs.length - 1].lng),
+          waypoints: waypoints,
           travelMode: google.maps.TravelMode.DRIVING,
         },
         (result, status) => {
           if (status === google.maps.DirectionsStatus.OK && result) {
             setDirections(result);
             
-            // Extract distance and duration
-            if (result.routes[0].legs[0]) {
-              const leg = result.routes[0].legs[0];
-              setDistance(leg.distance?.text || null);
-              setDuration(leg.duration?.text || null);
-              
-              // Calculate cost (50 LKR per km)
-              const distanceInKm = leg.distance?.value ? leg.distance.value / 1000 : 0;
-              const calculatedCost = Math.round(distanceInKm * 50);
-              setCost(calculatedCost);
-            }
+            // Calculate total distance and duration from all legs
+            let totalDistance = 0;
+            let totalDuration = 0;
+            
+            result.routes[0].legs.forEach(leg => {
+              if (leg.distance) totalDistance += leg.distance.value;
+              if (leg.duration) totalDuration += leg.duration.value;
+            });
+            
+            // Format distance and duration
+            const distanceInKm = totalDistance / 1000;
+            const durationInMinutes = Math.round(totalDuration / 60);
+            
+            setDistance(`${distanceInKm.toFixed(1)} km`);
+            setDuration(`${durationInMinutes} min`);
+            
+            // Calculate cost (50 LKR per km)
+            const calculatedCost = Math.round(distanceInKm * 50);
+            setCost(calculatedCost);
           } else {
             console.error('Error fetching directions:', status);
+            setDirections(null);
           }
         }
       );
@@ -642,6 +698,7 @@ export default function MapPage() {
     return nearestDriver;
   }, [pickup, onlineDrivers, rejectedDrivers]);
 
+  // Function to handle ride request
   const handleRequestRide = async () => {
     // If pickup location is not set but we have a pickup value, geocode it
     if (!pickup && pickupValue) {
@@ -656,13 +713,17 @@ export default function MapPage() {
       }
     }
     
-    // If dropoff location is not set but we have dropoff values, geocode them
+    // If dropoff locations are not set but we have dropoff values, geocode them
     const newDropoffs = [...dropoffs];
     for (let i = 0; i < dropoffInputs.length; i++) {
       if ((!dropoffs[i] || !dropoffs[i].lat) && dropoffInputs[i]) {
         try {
           const results = await getGeocode({ address: dropoffInputs[i] });
           const { lat, lng } = getLatLng(results[0]);
+          // Ensure the array has enough elements
+          while (newDropoffs.length <= i) {
+            newDropoffs.push({ lat: 0, lng: 0 });
+          }
           newDropoffs[i] = { lat, lng, address: dropoffInputs[i] };
         } catch (error) {
           console.error('Error geocoding dropoff address: ', error);
@@ -673,7 +734,9 @@ export default function MapPage() {
     }
     setDropoffs(newDropoffs);
     
-    if (pickup && newDropoffs.length > 0 && newDropoffs.every(d => d && d.lat)) {
+    // Check if we have valid pickup and at least one valid dropoff
+    const validDropoffs = newDropoffs.filter(d => d && d.lat && d.lng);
+    if (pickup && validDropoffs.length > 0) {
       setTripStatus('requested');
       setRejectedDrivers([]); // Reset rejected drivers list
       
@@ -753,7 +816,7 @@ export default function MapPage() {
 
   const resetTrip = () => {
     setPickup(null);
-    setDropoffs([]);
+    setDropoffs([{ lat: 0, lng: 0, address: '' }]); // Reset to one empty dropoff
     setDirections(null);
     setDistance(null);
     setDuration(null);
@@ -763,10 +826,21 @@ export default function MapPage() {
     setRejectedDrivers([]);
     setEta(null);
     setPickupValue('');
-    setDropoffInputs(['']);
+    setDropoffInputs(['']); // Reset to one empty input
   };
 
-  const center = pickup || dropoffs[dropoffs.length - 1] || defaultCenter;
+  // Use the last valid dropoff for centering the map, or default center
+  const center = (() => {
+    // Find the last valid dropoff point
+    for (let i = dropoffs.length - 1; i >= 0; i--) {
+      const dropoff = dropoffs[i];
+      if (dropoff && dropoff.lat && dropoff.lng) {
+        return { lat: dropoff.lat, lng: dropoff.lng };
+      }
+    }
+    // If no valid dropoffs, use pickup or default
+    return pickup || defaultCenter;
+  })();
 
   // Don't render map if API key is missing
   if (!apiKey) {
@@ -799,7 +873,7 @@ export default function MapPage() {
           <MapWithLoader 
             center={center} 
             pickup={pickup} 
-            dropoff={dropoffs[dropoffs.length - 1]}
+            dropoffs={dropoffs} // Pass array of dropoffs
             directions={directions}
             apiKey={apiKey}
             onlineDrivers={onlineDrivers}
@@ -823,52 +897,59 @@ export default function MapPage() {
         </Button>
       </div>
 
+      {/* Location selection indicator */}
+      {selectingLocation && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 bg-card text-card-foreground px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
+          <p className="font-medium">
+            {selectingLocation === 'pickup' 
+              ? 'Click on the map to select pickup location' 
+              : 'Click on the map to add destination stops'}
+          </p>
+          {selectingLocation === 'dropoff' && (
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={() => setSelectingLocation(null)}
+              className="h-6 text-xs"
+            >
+              Finish Adding Stops
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Bottom Sheet */}
       <div className="absolute bottom-0 left-0 right-0 p-4 z-20">
         <Card className="w-full max-w-lg mx-auto shadow-2xl rounded-2xl">
           {tripStatus === 'selecting' && (
             <>
               <CardHeader>
-                <CardTitle className="font-headline text-2xl">Where to?</CardTitle>
-                <CardDescription>
-                  Enter your pickup and dropoff locations.
-                </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4">
-                <div className="flex gap-2">
-                  <Button
-                    variant={selectingLocation === 'pickup' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSelectingLocation(selectingLocation === 'pickup' ? null : 'pickup')}
-                    className="flex-1"
-                  >
-                    <MapPin className="h-4 w-4 mr-2 text-green-500" />
-                    Set Pickup
-                  </Button>
-                  <Button
-                    variant={selectingLocation === 'dropoff' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSelectingLocation(selectingLocation === 'dropoff' ? null : 'dropoff')}
-                    className="flex-1"
-                  >
-                    <Flag className="h-4 w-4 mr-2 text-red-500" />
-                    Set Dropoff
-                  </Button>
-                </div>
-                
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-green-500" />
                   <Input
                     value={pickupValue}
                     onChange={(e) => {
                       handlePickupInput(e);
-                      setIsCurrentLocation(false); // Reset flag when user types
+                      setIsCurrentLocation(false);
                     }}
                     onBlur={handlePickupBlur}
                     disabled={!pickupReady}
                     placeholder="Enter pickup location"
-                    className="pl-10 pr-10" // Added padding for the button
+                    className="pl-10 pr-20"
                   />
+                  {/* Green location icon for pickup on the right side */}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={`absolute right-10 top-1/2 -translate-y-1/2 h-6 w-6 ${selectingLocation === 'pickup' ? 'text-green-600 bg-green-100 rounded-full' : 'text-green-500 hover:text-green-600'}`}
+                    onClick={() => setSelectingLocation(selectingLocation === 'pickup' ? null : 'pickup')}
+                    title="Set pickup location on map"
+                  >
+                    <MapPin className="h-5 w-5" />
+                  </Button>
                   <Button
                     type="button"
                     variant="ghost"
@@ -911,21 +992,21 @@ export default function MapPage() {
                       onBlur={() => handleDropoffBlur(index)}
                       disabled={!dropoffAutocompleteHooks[index] || !dropoffAutocompleteHooks[index].ready}
                       placeholder={`Enter destination ${index + 1}`}
-                      className="pl-10 pr-16" // Increased padding for both buttons
+                      className="pl-10 pr-20"
                     />
-                    {index === 0 && dropoffInputs.length < maxDropoffs && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground hover:text-foreground"
-                        onClick={addDropoffField}
-                        title="Add another destination"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {index > 0 && (
+                    {/* Red location icon for dropoff on the right side */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className={`absolute right-10 top-1/2 -translate-y-1/2 h-6 w-6 ${selectingLocation === 'dropoff' ? 'text-red-600 bg-red-100 rounded-full' : 'text-red-500 hover:text-red-600'}`}
+                      onClick={() => setSelectingLocation(selectingLocation === 'dropoff' ? null : 'dropoff')}
+                      title="Set destination on map"
+                    >
+                      <Flag className="h-5 w-5" />
+                    </Button>
+                    {/* Show remove button only for fields beyond the first that have values */}
+                    {index > 0 && dropoffValue && (
                       <Button
                         type="button"
                         variant="ghost"
@@ -935,6 +1016,21 @@ export default function MapPage() {
                         title="Remove this destination"
                       >
                         <Minus className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {/* Show plus button only on the last field if it has a value and we haven't reached the limit */}
+                    {index === dropoffInputs.length - 1 && 
+                     dropoffValue && 
+                     dropoffInputs.length < maxDropoffs && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground hover:text-foreground"
+                        onClick={addDropoffField}
+                        title="Add another destination"
+                      >
+                        <Plus className="h-4 w-4" />
                       </Button>
                     )}
                     {dropoffAutocompleteHooks[index] && dropoffAutocompleteHooks[index].suggestions.status === 'OK' && (
@@ -953,19 +1049,6 @@ export default function MapPage() {
                     )}
                   </div>
                 ))}
-                
-                {/* Show Add Button if no extra fields yet and under limit */}
-                {dropoffInputs.length === 1 && dropoffInputs.length < maxDropoffs && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={addDropoffField}
-                    className="w-full"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Another Destination
-                  </Button>
-                )}
                 
                 {(distance || duration || cost) && (
                   <div className="grid grid-cols-3 gap-2 p-2 bg-secondary rounded-lg">
@@ -994,7 +1077,7 @@ export default function MapPage() {
                 <Button 
                   onClick={handleRequestRide} 
                   className="w-full" 
-                  disabled={!pickup || dropoffs.length === 0 || !dropoffs.every(d => d && d.lat)}
+                  disabled={!pickup || dropoffs.filter(d => d && d.lat && d.lng).length === 0}
                 >
                   Request Ride
                 </Button>
@@ -1068,7 +1151,11 @@ export default function MapPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Flag className="h-4 w-4 text-red-500" />
-                  <span className="text-sm truncate">{dropoffInputs[0] || 'Destination'}</span>
+                  <span className="text-sm truncate">
+                    {dropoffs.length > 0 
+                      ? dropoffs.map((d, i) => d?.address || `Destination ${i + 1}`).join(' → ') 
+                      : 'Destination'}
+                  </span>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2 p-2 bg-secondary rounded-lg mb-4">

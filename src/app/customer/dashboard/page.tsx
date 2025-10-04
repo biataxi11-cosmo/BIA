@@ -15,8 +15,8 @@ function CustomerDashboard() {
   const navLinks = [
     { href: '/customer/dashboard', icon: Home, label: 'Home', active: true },
     { href: '/customer/ride-request', icon: List, label: 'My Rides' },
+    { href: '/customer/profile', icon: User, label: 'Profile' },
     { href: '#', icon: Bell, label: 'Notifications' },
-    { href: '#', icon: User, label: 'Profile' },
   ];
 
   const handleRideNow = () => {
