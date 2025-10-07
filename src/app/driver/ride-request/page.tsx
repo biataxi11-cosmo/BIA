@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Car, Home, List, User, MapPin } from 'lucide-react';
+import { RidesIconWithBadge } from '@/components/ride-requests-badge';
 import Link from 'next/link';
 import { DriverRideRequests } from '@/components/driver-ride-requests';
 import { DriverRideHistory } from '@/components/driver-ride-history';
@@ -64,7 +65,11 @@ function DriverRideRequest() {
               : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
           }`}
         >
-          <link.icon className="h-4 w-4" />
+          {link.label === 'Rides' ? (
+            <RidesIconWithBadge sizeClass="h-4 w-4" />
+          ) : (
+            <link.icon className="h-4 w-4" />
+          )}
           <span>{link.label}</span>
         </Link>
       ))}
@@ -161,7 +166,11 @@ function DriverRideRequest() {
                 link.active ? 'text-primary' : 'text-muted-foreground'
               }`}
             >
-              <link.icon className="h-6 w-6" />
+              {link.label === 'Rides' ? (
+                <RidesIconWithBadge sizeClass="h-6 w-6" />
+              ) : (
+                <link.icon className="h-6 w-6" />
+              )}
               <span className="text-xs">{link.label}</span>
             </Link>
           ))}

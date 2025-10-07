@@ -1,35 +1,47 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     // Users can read/write their own data
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Owner can read/write their own doc
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
       // Allow authenticated users to read driver data for map display
-      allow read: if request.auth != null && resource.data.role == 'driver' && resource.data.isOnline == true;
+      allow read: if isSignedIn() && resource.data.role == 'driver' && resource.data.isOnline == true;
+      // Admins can read/write any user doc (for admin dashboard management)
+      allow read, write: if isAdmin();
     }
     
     // Rides collection - users can read/write their own rides
     match /rides/{rideId} {
-      allow read, write: if request.auth != null;
-      // Customers can create rides
-      allow create: if request.auth != null;
-      // Customers can read their own rides
-      allow read: if request.auth != null && (resource.data.customerId == request.auth.uid || resource.data.driverId == request.auth.uid);
-      // Drivers can update rides they're assigned to
-      allow update: if request.auth != null && (resource.data.customerId == request.auth.uid || resource.data.driverId == request.auth.uid);
+      // Anyone signed in can create a ride
+      allow create: if isSignedIn();
+      // Customers or assigned drivers can read/update their rides
+      allow read: if isSignedIn() && (resource.data.customerId == request.auth.uid || resource.data.driverId == request.auth.uid);
+      allow update: if isSignedIn() && (resource.data.customerId == request.auth.uid || resource.data.driverId == request.auth.uid);
+      // Admins can read/update/delete any ride for management
+      allow read, update, delete: if isAdmin();
     }
     
     // Drivers collection - users can read/write their own driver data
     match /drivers/{driverId} {
-      allow read, write: if request.auth != null && request.auth.uid == driverId;
+      allow read, write: if isSignedIn() && request.auth.uid == driverId;
     }
     
     // Driver locations collection - drivers can write, authenticated users can read
     match /driverLocations/{driverId} {
       // Drivers can write their own location data
-      allow write: if request.auth != null && request.auth.uid == driverId;
+      allow write: if isSignedIn() && request.auth.uid == driverId;
       // Authenticated users can read all driver locations (for map display)
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
     }
     
     // Public data that anyone can read

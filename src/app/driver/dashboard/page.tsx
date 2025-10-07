@@ -11,6 +11,7 @@ import { db } from '@/lib/firebase';
 import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, GeoPoint, setDoc, deleteDoc } from 'firebase/firestore';
 import Link from 'next/link';
 import DashboardLayout from '@/components/dashboard-layout';
+import { RidesIconWithBadge } from '@/components/ride-requests-badge';
 
 const mapContainerStyle = {
   width: '100%',
@@ -297,7 +298,11 @@ export default function DriverDashboard() {
               : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
           } ${!user ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          <link.icon className="h-4 w-4" />
+          {link.label === 'Rides' ? (
+            <RidesIconWithBadge sizeClass="h-4 w-4" />
+          ) : (
+            <link.icon className="h-4 w-4" />
+          )}
           <span>{link.label}</span>
         </Link>
       ))}
@@ -444,7 +449,11 @@ export default function DriverDashboard() {
                   link.active ? 'text-primary' : 'text-muted-foreground'
                 }`}
               >
-                <link.icon className="h-6 w-6" />
+                {link.label === 'Rides' ? (
+                  <RidesIconWithBadge sizeClass="h-6 w-6" />
+                ) : (
+                  <link.icon className="h-6 w-6" />
+                )}
                 <span className="text-xs">{link.label}</span>
               </Link>
             ))}

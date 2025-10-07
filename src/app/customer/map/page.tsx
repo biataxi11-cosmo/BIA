@@ -1070,16 +1070,7 @@ export default function MapPage() {
               ? 'Click on the map to select pickup location' 
               : 'Click on the map to add destination stops'}
           </p>
-          {selectingLocation === 'dropoff' && (
-            <Button 
-              size="sm" 
-              variant="outline" 
-              onClick={() => setSelectingLocation(null)}
-              className="h-6 text-xs"
-            >
-              Finish Adding Stops
-            </Button>
-          )}
+          {/* Removed Finish Adding Stops button */}
         </div>
       )}
 
