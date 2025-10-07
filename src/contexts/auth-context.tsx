@@ -26,6 +26,14 @@ interface UserProfile {
   birthday?: string;
   gender?: string;
   emergencyContacts?: EmergencyContact[];
+  // Driver specific fields
+  driverLicense?: string;
+  vehicleMake?: string;
+  vehicleModel?: string;
+  vehicleYear?: string;
+  vehicleColor?: string;
+  licensePlate?: string;
+  rating?: number; // Add rating property
 }
 
 interface AuthContextType {
@@ -73,6 +81,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           birthday: userData.birthday,
           gender: userData.gender,
           emergencyContacts: userData.emergencyContacts || [],
+          // Driver specific fields
+          driverLicense: userData.driverLicense,
+          vehicleMake: userData.vehicleMake,
+          vehicleModel: userData.vehicleModel,
+          vehicleYear: userData.vehicleYear,
+          vehicleColor: userData.vehicleColor,
+          licensePlate: userData.licensePlate,
+          rating: userData.rating || 5.0, // Default rating
         };
         setUserProfile(profile);
         setRole(profile.role);
@@ -88,6 +104,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           createdAt: new Date(),
           updatedAt: new Date(),
           emergencyContacts: [],
+          rating: 5.0, // Default rating
         };
         
         await setDoc(doc(db, 'users', user.uid), newProfile);
@@ -110,6 +127,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           createdAt: new Date(),
           updatedAt: new Date(),
           emergencyContacts: [],
+          rating: 5.0, // Default rating
         };
         setUserProfile(fallbackProfile);
         setRole(storedRole);
@@ -149,35 +167,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const handleSetRole = async (newRole: UserRole | null) => {
-    if (!user || !newRole) {
-      setRole(null);
-      localStorage.removeItem('userRole');
-      return;
-    }
-
-    try {
-      // Update role in Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        role: newRole,
-        updatedAt: new Date(),
-      }, { merge: true });
-
-      // Update local state
-      setRole(newRole);
-      localStorage.setItem('userRole', newRole);
-      
-      // Update user profile
-      if (userProfile) {
-        setUserProfile({
-          ...userProfile,
-          role: newRole,
-          updatedAt: new Date(),
-        });
-      }
-    } catch (err) {
-      console.error('Error updating user role:', err);
-      setError('Failed to update user role');
-    }
+    // Prevent changing roles after login
+    // The role should be fixed based on user registration
+    console.warn('Role changes are not allowed after registration. User role is fixed.');
+    return;
   };
 
   const value = {

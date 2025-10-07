@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   description: 'Your reliable ride-hailing service.',
   keywords: ['taxi', 'ride', 'transportation', 'BIA', 'Sri Lanka'],
   authors: [{ name: 'BIA TaxiGo Team' }],
-  viewport: 'width=device-width, initial-scale=1',
+  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
   robots: 'index, follow',
   openGraph: {
     title: 'BIA TaxiGo',

@@ -22,6 +22,8 @@ import usePlacesAutocomplete, {
 import { GoogleMap, Marker, DirectionsRenderer, useJsApiLoader } from '@react-google-maps/api';
 import { useAuth } from '@/contexts/auth-context';
 import { useGoogleMaps } from '@/hooks/use-google-maps';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, doc, updateDoc, serverTimestamp, onSnapshot, query, where, GeoPoint } from 'firebase/firestore';
 
 const mapContainerStyle = {
   width: '100%',
@@ -43,6 +45,12 @@ type Driver = {
   licensePlate: string;
   location: LatLng;
   isOnline: boolean;
+  // Additional driver details
+  phoneNumber?: string;
+  vehicleMake?: string;
+  vehicleModel?: string;
+  vehicleYear?: string;
+  vehicleColor?: string;
 };
 
 // Add a new type for waypoints
@@ -59,6 +67,8 @@ const MapContent = ({
   isLoaded, 
   loadError,
   onlineDrivers,
+  driversLoading,
+  driversError,
   onMapClick,
   selectingLocation
 }: { 
@@ -69,6 +79,8 @@ const MapContent = ({
   isLoaded: boolean;
   loadError: Error | undefined;
   onlineDrivers: Driver[];
+  driversLoading: boolean;
+  driversError: string | null;
   onMapClick?: (e: google.maps.MapMouseEvent) => void;
   selectingLocation: 'pickup' | 'dropoff' | null;
 }) => {
@@ -93,6 +105,8 @@ const MapContent = ({
       </div>
     );
   }
+
+  console.log('Rendering map with drivers:', onlineDrivers);
 
   return (
     <>
@@ -170,6 +184,37 @@ const MapContent = ({
           </p>
         </div>
       )}
+      
+      {/* Driver loading indicator */}
+      {driversLoading && (
+        <div className="absolute top-4 right-4 z-10 bg-card text-card-foreground px-4 py-2 rounded-lg shadow-lg">
+          <div className="flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+            <p className="text-sm font-medium">Loading drivers...</p>
+          </div>
+        </div>
+      )}
+      
+      {/* Driver error indicator */}
+      {driversError && (
+        <div className="absolute top-4 right-4 z-10 bg-destructive text-destructive-foreground px-4 py-2 rounded-lg shadow-lg">
+          <p className="text-sm font-medium">{driversError}</p>
+        </div>
+      )}
+      
+      {/* Driver count indicator */}
+      {!driversLoading && !driversError && (
+        <div className="absolute bottom-4 right-4 z-10 bg-card text-card-foreground px-4 py-2 rounded-lg shadow-lg">
+          <p className="text-sm font-medium">
+            {onlineDrivers.length} driver{onlineDrivers.length !== 1 ? 's' : ''} online
+          </p>
+          {onlineDrivers.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Showing {onlineDrivers.length} driver{onlineDrivers.length !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+      )}
     </>
   );
 };
@@ -181,6 +226,8 @@ const MapWithLoader = ({
   directions,
   apiKey,
   onlineDrivers,
+  driversLoading,
+  driversError,
   onMapClick,
   selectingLocation
 }: { 
@@ -190,6 +237,8 @@ const MapWithLoader = ({
   directions: google.maps.DirectionsResult | null;
   apiKey: string;
   onlineDrivers: Driver[];
+  driversLoading: boolean;
+  driversError: string | null;
   onMapClick?: (e: google.maps.MapMouseEvent) => void;
   selectingLocation: 'pickup' | 'dropoff' | null;
 }) => {
@@ -208,6 +257,8 @@ const MapWithLoader = ({
       isLoaded={isLoaded} 
       loadError={loadError} 
       onlineDrivers={onlineDrivers}
+      driversLoading={driversLoading}
+      driversError={driversError}
       onMapClick={onMapClick}
       selectingLocation={selectingLocation}
     />
@@ -236,7 +287,7 @@ export default function MapPage() {
   const router = useRouter();
   const { user, userProfile } = useAuth();
   const [pickup, setPickup] = useState<{ lat: number; lng: number } | null>(null);
-  const [dropoffs, setDropoffs] = useState<Array<{ lat: number; lng: number; address?: string }>>([{ lat: 0, lng: 0, address: '' }]); // Initialize with one empty dropoff
+  const [dropoffs, setDropoffs] = useState<Array<{ lat: number; lng: number; address?: string }>>([{ lat: 0, lng: 0, address: '' }]);
   const [tripStatus, setTripStatus] = useState<TripStatus>('selecting');
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [distance, setDistance] = useState<string | null>(null);
@@ -244,12 +295,15 @@ export default function MapPage() {
   const [cost, setCost] = useState<number | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [onlineDrivers, setOnlineDrivers] = useState<Driver[]>([]);
+  const [driversLoading, setDriversLoading] = useState(true);
+  const [driversError, setDriversError] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [rejectedDrivers, setRejectedDrivers] = useState<string[]>([]);
   const [eta, setEta] = useState<number | null>(null);
-  const [isCurrentLocation, setIsCurrentLocation] = useState(false); // Track if location was set via current location button
-  const [selectingLocation, setSelectingLocation] = useState<'pickup' | 'dropoff' | null>(null); // Track which location is being selected
-  const [dropoffInputs, setDropoffInputs] = useState<string[]>(['']); // Array of dropoff input values
+  const [isCurrentLocation, setIsCurrentLocation] = useState(false);
+  const [selectingLocation, setSelectingLocation] = useState<'pickup' | 'dropoff' | null>(null);
+  const [dropoffInputs, setDropoffInputs] = useState<string[]>(['']);
+  const [rideId, setRideId] = useState<string | null>(null);
 
   // Get API key from environment variable
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
@@ -257,43 +311,94 @@ export default function MapPage() {
   // Use our custom hook to ensure Google Maps is loaded
   const { isLoaded: isGoogleMapsLoaded, error: googleMapsError } = useGoogleMaps(apiKey);
 
+  // Load online drivers from Firebase
+  useEffect(() => {
+    setDriversLoading(true);
+    setDriversError(null);
+    
+    console.log('Starting to fetch online drivers...');
+    
+    // Query for all online drivers from the dedicated driverLocations collection
+    // This provides better security and performance for real-time updates
+    const driversQuery = query(
+      collection(db, 'driverLocations'),
+      where('isOnline', '==', true)
+    );
+    
+    const unsubscribe = onSnapshot(driversQuery, 
+      (snapshot) => {
+        console.log('Received snapshot update for online drivers:', snapshot.size);
+        const drivers: Driver[] = [];
+        
+        if (snapshot.empty) {
+          console.log('No drivers found in snapshot');
+        }
+        
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          console.log('Driver document data:', doc.id, data);
+          
+          // Check if location exists and handle GeoPoint format
+          let locationData = null;
+          if (data.location && data.location instanceof GeoPoint) {
+            locationData = {
+              lat: data.location.latitude,
+              lng: data.location.longitude
+            };
+          }
+          
+          // Log for debugging
+          console.log('Location data check for driver', doc.id, ':', {
+            hasLocation: !!data.location,
+            isGeoPoint: data.location instanceof GeoPoint,
+            locationData: locationData,
+            isOnline: data.isOnline
+          });
+          
+          if (locationData && data.isOnline) {
+            const driver: Driver = {
+              id: data.driverId || doc.id,
+              name: data.name || 'Unknown Driver',
+              rating: data.rating || 5.0,
+              car: data.car || 'Unknown Car',
+              licensePlate: data.licensePlate || 'Unknown',
+              location: locationData,
+              isOnline: data.isOnline || false,
+              // Additional driver details
+              phoneNumber: data.phoneNumber || '',
+              vehicleMake: data.vehicleMake || '',
+              vehicleModel: data.vehicleModel || '',
+              vehicleYear: data.vehicleYear || '',
+              vehicleColor: data.vehicleColor || '',
+            };
+            
+            console.log('Adding driver to list:', driver);
+            drivers.push(driver);
+          } else {
+            console.log('Skipping driver due to missing location data or offline status:', doc.id);
+          }
+        });
+        
+        console.log('Final drivers list:', drivers);
+        setOnlineDrivers(drivers);
+        setDriversLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching online drivers:', error);
+        setDriversError('Failed to load driver locations. Please try again.');
+        setDriversLoading(false);
+      }
+    );
+    
+    return () => {
+      console.log('Unsubscribing from driver locations');
+      unsubscribe();
+    };
+  }, []);
+
   // Only render map after component is mounted to avoid SSR issues
   useEffect(() => {
     setIsMounted(true);
-    
-    // Simulate fetching online drivers
-    // In a real app, this would come from Firebase or an API
-    const mockDrivers: Driver[] = [
-      { 
-        id: '1', 
-        name: 'John D.', 
-        rating: 4.9, 
-        car: 'Toyota Prius', 
-        licensePlate: 'BIA-123',
-        location: { lat: 6.9271 + Math.random() * 0.1 - 0.05, lng: 79.8612 + Math.random() * 0.1 - 0.05 },
-        isOnline: true
-      },
-      { 
-        id: '2', 
-        name: 'Sarah M.', 
-        rating: 4.8, 
-        car: 'Honda Civic', 
-        licensePlate: 'BIA-456',
-        location: { lat: 6.9271 + Math.random() * 0.1 - 0.05, lng: 79.8612 + Math.random() * 0.1 - 0.05 },
-        isOnline: true
-      },
-      { 
-        id: '3', 
-        name: 'Michael T.', 
-        rating: 4.7, 
-        car: 'Nissan Sunny', 
-        licensePlate: 'BIA-789',
-        location: { lat: 6.9271 + Math.random() * 0.1 - 0.05, lng: 79.8612 + Math.random() * 0.1 - 0.05 },
-        isOnline: true
-      },
-    ];
-    
-    setOnlineDrivers(mockDrivers);
   }, []);
 
   // Single pickup autocomplete
@@ -736,35 +841,93 @@ export default function MapPage() {
     
     // Check if we have valid pickup and at least one valid dropoff
     const validDropoffs = newDropoffs.filter(d => d && d.lat && d.lng);
-    if (pickup && validDropoffs.length > 0) {
+    if (pickup && validDropoffs.length > 0 && user) {
       setTripStatus('requested');
       setRejectedDrivers([]); // Reset rejected drivers list
       
-      // Simulate driver assignment
-      setTimeout(() => {
-        const nearestDriver = findNearestDriver();
-        if (nearestDriver) {
-          setSelectedDriver(nearestDriver);
-          setTripStatus('driver_assigned');
-          
-          // Simulate driver acceptance after 3 seconds
-          setTimeout(() => {
-            // Randomly simulate driver acceptance or rejection for demo
-            const driverAccepts = Math.random() > 0.3; // 70% chance of acceptance
-            if (driverAccepts) {
-              setTripStatus('in_progress');
-            } else {
-              handleDriverRejection();
-            }
-          }, 3000);
-        } else {
-          // No drivers available
-          alert('No drivers available at the moment. Please try again later.');
-          setTripStatus('selecting');
-        }
-      }, 2000);
+      try {
+        // Create a ride request in Firestore
+        const rideData = {
+          customerId: user.uid,
+          customerName: userProfile?.fullName || user.displayName || 'Customer',
+          customerPhone: userProfile?.phoneNumber || '',
+          pickup: {
+            lat: pickup.lat,
+            lng: pickup.lng,
+            address: pickupValue
+          },
+          dropoffs: validDropoffs.map((dropoff, index) => ({
+            lat: dropoff.lat,
+            lng: dropoff.lng,
+            address: dropoff.address || dropoffInputs[index] || `Destination ${index + 1}`
+          })),
+          status: 'requested',
+          distance: distance || null,
+          duration: duration || null,
+          cost: cost || null,
+          requestedAt: serverTimestamp(),
+        };
+        
+        const docRef = await addDoc(collection(db, 'rides'), rideData);
+        setRideId(docRef.id);
+        console.log('Ride request created with ID:', docRef.id);
+      } catch (error) {
+        console.error('Error creating ride request:', error);
+        alert('Failed to request ride. Please try again.');
+        setTripStatus('selecting');
+        return;
+      }
     }
   };
+
+  // Listen for ride status updates
+  useEffect(() => {
+    if (!rideId) return;
+    
+    const rideRef = doc(db, 'rides', rideId);
+    const unsubscribe = onSnapshot(rideRef, (doc) => {
+      if (doc.exists()) {
+        const rideData = doc.data();
+        console.log('Ride status updated:', rideData.status);
+        
+        switch (rideData.status) {
+          case 'requested':
+            setTripStatus('requested');
+            break;
+          case 'accepted':
+            setSelectedDriver({
+              id: rideData.driverId,
+              name: rideData.driverName || 'Driver',
+              rating: rideData.driverRating || 5.0,
+              car: rideData.vehicle || 'Unknown Vehicle',
+              licensePlate: rideData.licensePlate || 'Unknown',
+              location: { lat: 0, lng: 0 }, // Will be updated with real location
+              isOnline: true,
+              phoneNumber: rideData.driverPhone || '',
+              vehicleMake: rideData.vehicleMake || '',
+              vehicleModel: rideData.vehicleModel || '',
+              vehicleYear: rideData.vehicleYear || '',
+              vehicleColor: rideData.vehicleColor || '',
+            });
+            setTripStatus('driver_assigned');
+            break;
+          case 'in_progress':
+            setTripStatus('in_progress');
+            break;
+          case 'completed':
+            setTripStatus('completed');
+            break;
+          case 'cancelled':
+            alert('Your ride request was cancelled.');
+            setTripStatus('selecting');
+            setRideId(null);
+            break;
+        }
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [rideId]);
 
   const handleDriverRejection = () => {
     setTripStatus('driver_rejected');
@@ -877,6 +1040,8 @@ export default function MapPage() {
             directions={directions}
             apiKey={apiKey}
             onlineDrivers={onlineDrivers}
+            driversLoading={driversLoading}
+            driversError={driversError}
             onMapClick={handleMapClick}
             selectingLocation={selectingLocation}
           />
@@ -1111,9 +1276,25 @@ export default function MapPage() {
                 </div>
               </div>
               <div className="flex justify-between items-center p-3 bg-secondary rounded-lg mb-4">
-                <span className="text-sm">{selectedDriver?.car} • {selectedDriver?.licensePlate}</span>
+                <div>
+                  <span className="text-sm font-medium">
+                    {selectedDriver?.vehicleYear && selectedDriver?.vehicleMake && selectedDriver?.vehicleModel 
+                      ? `${selectedDriver.vehicleYear} ${selectedDriver.vehicleMake} ${selectedDriver.vehicleModel}` 
+                      : selectedDriver?.car || 'Unknown Vehicle'}
+                  </span>
+                  <span className="text-sm block">
+                    {selectedDriver?.licensePlate ? `License: ${selectedDriver.licensePlate}` : 'License: Unknown'}
+                  </span>
+                </div>
                 <span className="text-sm font-medium">{eta || '5'} min away</span>
               </div>
+              {selectedDriver?.phoneNumber && (
+                <div className="p-3 bg-secondary rounded-lg mb-4">
+                  <p className="text-sm">
+                    Contact: <a href={`tel:${selectedDriver.phoneNumber}`} className="text-primary hover:underline">{selectedDriver.phoneNumber}</a>
+                  </p>
+                </div>
+              )}
               <p className="text-center text-sm text-muted-foreground mb-4">
                 Waiting for driver to accept...
               </p>
@@ -1126,24 +1307,42 @@ export default function MapPage() {
               </div>
             </CardContent>
           )}
-          
-          {tripStatus === 'driver_rejected' && (
-            <CardContent className="p-6 text-center">
-              <X className="h-12 w-12 text-red-500 mx-auto mb-2" />
-              <h3 className="text-xl font-semibold mb-2">Driver Unavailable</h3>
-              <p className="text-muted-foreground mb-4">Looking for another driver...</p>
-              <div className="flex justify-center">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-              </div>
-            </CardContent>
-          )}
-          
+
           {tripStatus === 'in_progress' && (
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-semibold">On the way</h3>
                 <Navigation className="h-6 w-6 text-primary" />
               </div>
+              <div className="flex items-center gap-4 mb-4">
+                <div className="bg-primary rounded-full p-2">
+                  <User className="h-6 w-6 text-primary-foreground" />
+                </div>
+                <div>
+                  <p className="font-medium">{selectedDriver?.name || 'Driver'}</p>
+                  <p className="text-sm text-muted-foreground">{selectedDriver?.rating} ★ ({Math.floor(Math.random() * 100) + 50} trips)</p>
+                </div>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-secondary rounded-lg mb-4">
+                <div>
+                  <span className="text-sm font-medium">
+                    {selectedDriver?.vehicleYear && selectedDriver?.vehicleMake && selectedDriver?.vehicleModel 
+                      ? `${selectedDriver.vehicleYear} ${selectedDriver.vehicleMake} ${selectedDriver.vehicleModel}` 
+                      : selectedDriver?.car || 'Unknown Vehicle'}
+                  </span>
+                  <span className="text-sm block">
+                    {selectedDriver?.licensePlate ? `License: ${selectedDriver.licensePlate}` : 'License: Unknown'}
+                  </span>
+                </div>
+                <span className="text-sm font-medium">{duration || 'N/A'}</span>
+              </div>
+              {selectedDriver?.phoneNumber && (
+                <div className="p-3 bg-secondary rounded-lg mb-4">
+                  <p className="text-sm">
+                    Contact: <a href={`tel:${selectedDriver.phoneNumber}`} className="text-primary hover:underline">{selectedDriver.phoneNumber}</a>
+                  </p>
+                </div>
+              )}
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-2">
                   <MapPin className="h-4 w-4 text-green-500" />
@@ -1172,9 +1371,6 @@ export default function MapPage() {
                   <p className="font-medium">LKR {cost || '0'}</p>
                 </div>
               </div>
-              <Button onClick={handleEndTrip} className="w-full">
-                End Trip
-              </Button>
             </CardContent>
           )}
           

@@ -62,7 +62,15 @@ See [SECURITY_NOTICE.md](SECURITY_NOTICE.md) for complete details on the securit
        
        // Drivers collection
        match /drivers/{driverId} {
-         allow read, write: if request.auth != null;
+         allow read, write: if request.auth != null && request.auth.uid == driverId;
+       }
+       
+       // Driver locations collection - drivers can write, authenticated users can read
+       match /driverLocations/{driverId} {
+         // Drivers can write their own location data
+         allow write: if request.auth != null && request.auth.uid == driverId;
+         // Authenticated users can read all driver locations (for map display)
+         allow read: if request.auth != null;
        }
      }
    }

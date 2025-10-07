@@ -2,26 +2,24 @@
 
 import DashboardLayout from '@/components/dashboard-layout';
 import { withAuth } from '@/components/with-auth';
-import { Button } from '@/components/ui/button';
-import { useRouter } from 'next/navigation';
-import { Bell, Home, List, User } from 'lucide-react';
-import Link from 'next/link';
 import { useAuth } from '@/contexts/auth-context';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { Home, User } from 'lucide-react';
 
-function CustomerDashboard() {
-  const router = useRouter();
+interface ComingSoonDashboardProps {
+  role: 'driver' | 'admin';
+  title: string;
+  description: string;
+}
+
+function ComingSoonDashboardContent({ role, title, description }: ComingSoonDashboardProps) {
   const { user, userProfile } = useAuth();
 
   const navLinks = [
-    { href: '/customer/dashboard', icon: Home, label: 'Home', active: true },
-    { href: '/customer/ride-request', icon: List, label: 'My Rides' },
-    { href: '/customer/profile', icon: User, label: 'Profile' },
-    { href: '#', icon: Bell, label: 'Notifications' },
+    { href: `/${role}/dashboard`, icon: Home, label: 'Home', active: true },
+    { href: `/${role}/profile`, icon: User, label: 'Profile' },
   ];
-
-  const handleRideNow = () => {
-    router.push('/customer/map');
-  };
 
   const DesktopNav = () => (
     <nav className="hidden md:flex items-center gap-4">
@@ -47,26 +45,20 @@ function CustomerDashboard() {
       desktopNav={<DesktopNav />}
       mainClassName="flex items-center justify-center"
     >
-      <div className="text-center">
+      <div className="text-center max-w-md">
         <div className="mb-6">
-          <div className="w-16 h-16 mx-auto mb-4 bg-srilankan-gradient rounded-full flex items-center justify-center">
-            <span className="text-white text-2xl font-bold">BIA</span>
+          <div className="bg-gray-200 border-2 border-dashed rounded-xl w-16 h-16 mx-auto flex items-center justify-center">
+            <span className="text-2xl">⏱️</span>
           </div>
-          <h1 className="text-3xl font-bold mb-2 text-srilankan-navy">
-            Welcome, {userProfile?.displayName || user?.displayName || 'Customer'}!
-          </h1>
-          <p className="text-srilankan-teal text-lg">Ready to go somewhere?</p>
         </div>
+        <h1 className="text-3xl font-bold mb-4">{title}</h1>
+        <p className="text-muted-foreground mb-8">{description}</p>
         <div className="space-y-4">
-          <Button 
-            onClick={handleRideNow} 
-            size="lg" 
-            className="w-full max-w-xs bg-srilankan-red hover:bg-srilankan-red/90 text-white font-semibold py-3 px-6 rounded-lg shadow-lg"
-          >
-            Ride Now
+          <Button asChild>
+            <Link href="/">Go to Home</Link>
           </Button>
-          <div className="text-sm text-srilankan-navy/70">
-            <p>Quick access to your ride history and preferences</p>
+          <div className="text-sm text-muted-foreground">
+            <p>We're working hard to bring you an amazing experience!</p>
           </div>
         </div>
       </div>
@@ -92,4 +84,25 @@ function CustomerDashboard() {
   );
 }
 
-export default withAuth(CustomerDashboard, ['customer']);
+export function DriverComingSoonDashboard() {
+  return (
+    <ComingSoonDashboardContent
+      role="driver"
+      title="Driver Dashboard Coming Soon"
+      description="We're building an amazing dashboard for drivers. Check back soon!"
+    />
+  );
+}
+
+export function AdminComingSoonDashboard() {
+  return (
+    <ComingSoonDashboardContent
+      role="admin"
+      title="Admin Dashboard Coming Soon"
+      description="We're building an amazing dashboard for administrators. Check back soon!"
+    />
+  );
+}
+
+export const DriverComingSoonPage = withAuth(DriverComingSoonDashboard, ['driver']);
+export const AdminComingSoonPage = withAuth(AdminComingSoonDashboard, ['admin']);
