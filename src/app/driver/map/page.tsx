@@ -203,6 +203,18 @@ function DriverMap() {
         setAssignedRide(null);
         setDirections(null);
       }
+    }, (error) => {
+      console.error('Error fetching assigned rides:', error);
+      // Handle permission denied error specifically
+      if (error.code === 'permission-denied') {
+        toast({
+          title: "Permission Error",
+          description: "You don't have permission to access ride data. Please contact support.",
+          variant: "destructive",
+        });
+        // Set assignedRide to null to prevent errors
+        setAssignedRide(null);
+      }
     });
 
     return () => unsubscribe();
@@ -361,6 +373,17 @@ function DriverMap() {
             }
           );
         }
+      }
+      setLoading(false);
+    }, (error) => {
+      console.error('Error subscribing to driver location:', error);
+      // Handle permission denied error specifically
+      if (error.code === 'permission-denied') {
+        toast({
+          title: "Permission Error",
+          description: "You don't have permission to access this data. Please contact support.",
+          variant: "destructive",
+        });
       }
       setLoading(false);
     });

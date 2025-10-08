@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from './ui/separator';
+import { getFareSettings, calculateFare } from '@/lib/fare-settings';
 
 type RideState =
   | 'INITIAL'
@@ -270,7 +271,24 @@ function PaymentForm({ onPaymentComplete }: { onPaymentComplete: () => void }) {
   const { toast } = useToast();
   const [tipResult, setTipResult] = useState<CalculateTipOutput | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
-  const totalFare = 55;
+  const [totalFare, setTotalFare] = useState<number>(55); // Default value
+
+  // Load fare settings when component mounts
+  useEffect(() => {
+    const loadFareSettings = async () => {
+      try {
+        // In a real implementation, we would calculate the fare based on the actual trip distance
+        // For this demo, we'll use a default distance of 5km
+        const fareSettings = await getFareSettings();
+        const calculatedFare = calculateFare(5, fareSettings); // 5km default distance
+        setTotalFare(calculatedFare);
+      } catch (error) {
+        console.error('Error loading fare settings:', error);
+      }
+    };
+
+    loadFareSettings();
+  }, []);
 
   const form = useForm<z.infer<typeof tipFormSchema>>({
     resolver: zodResolver(tipFormSchema),
@@ -279,6 +297,11 @@ function PaymentForm({ onPaymentComplete }: { onPaymentComplete: () => void }) {
       location: 'New York, USA',
     },
   });
+
+  // Update form when totalFare changes
+  useEffect(() => {
+    form.setValue('rideFare', totalFare);
+  }, [totalFare, form]);
 
   async function onSubmit(values: z.infer<typeof tipFormSchema>) {
     setIsCalculating(true);

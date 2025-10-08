@@ -45,6 +45,11 @@ interface AuthContextType {
   error: string | null;
 }
 
+// Add this interface for custom claims
+interface CustomClaims {
+  role?: UserRole;
+}
+
 const AuthContext = createContext<AuthContextType>({
   user: null,
   userProfile: null,

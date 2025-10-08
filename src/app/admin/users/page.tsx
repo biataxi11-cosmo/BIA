@@ -102,8 +102,15 @@ function AdminUsersPage() {
 
   return (
     <DashboardLayout desktopNav={<DesktopNav />}> 
+      {/* Animated gradient background */}
+      <div className="fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/10 via-background to-secondary/10 animate-pulse"></div>
+        <div className="absolute top-0 right-0 w-1/3 h-1/3 bg-primary/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 left-0 w-1/3 h-1/3 bg-secondary/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
+      </div>
+
       <div className="flex flex-col gap-4">
-        <Card>
+        <Card className="glass-card backdrop-blur-sm bg-background/30 border border-white/20 shadow-lg">
           <CardHeader>
             <CardTitle>Users</CardTitle>
             <CardDescription>Search and manage registered users</CardDescription>
@@ -128,7 +135,7 @@ function AdminUsersPage() {
           </CardContent>
         </Card>
 
-        <div className="rounded-md border">
+        <div className="rounded-md border border-white/20 backdrop-blur-sm bg-background/30 shadow-lg">
           <Table>
             <TableHeader>
               <TableRow>

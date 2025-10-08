@@ -53,14 +53,13 @@ export default function DriverDashboard() {
     libraries: ['places']
   });
 
-  // Load online drivers from Firebase
+  // Load online drivers from Firebase using driverLocations collection
   useEffect(() => {
     if (!user) return;
     
-    // Query for all online drivers from the users collection
+    // Query for all online drivers from the driverLocations collection
     const driversQuery = query(
-      collection(db, 'users'),
-      where('role', '==', 'driver'),
+      collection(db, 'driverLocations'),
       where('isOnline', '==', true)
     );
     
@@ -93,9 +92,9 @@ export default function DriverDashboard() {
           if (locationData) {
             drivers.push({
               id: doc.id,
-              name: data.fullName || data.displayName || 'Unknown Driver',
+              name: data.name || 'Unknown Driver',
               rating: data.rating || 5.0,
-              car: data.carModel || 'Unknown Car',
+              car: data.car || 'Unknown Car',
               licensePlate: data.licensePlate || 'Unknown',
               location: locationData,
               isOnline: data.isOnline || false
@@ -109,13 +108,23 @@ export default function DriverDashboard() {
       },
       (error) => {
         console.error('Error fetching online drivers:', error);
+        // Handle permission denied error specifically
+        if (error.code === 'permission-denied') {
+          toast({
+            title: "Permission Error",
+            description: "You don't have permission to access driver data. Please contact support.",
+            variant: "destructive",
+          });
+          // Set onlineDrivers to empty array to prevent errors
+          setOnlineDrivers([]);
+        }
         // Show a user-friendly message without exposing technical details
         // In a real app, you might want to show a toast notification or similar
       }
     );
     
     return () => unsubscribe();
-  }, [user]);
+  }, [user, toast]);
 
   // Check current driver's online status from database
   useEffect(() => {
@@ -153,12 +162,47 @@ export default function DriverDashboard() {
           setDriverLocation(null);
         }
       }
+    }, (error) => {
+      console.error('Error fetching driver data:', error);
+      // Handle permission denied error specifically
+      if (error.code === 'permission-denied') {
+        toast({
+          title: "Permission Error",
+          description: "You don't have permission to access your driver data. Please contact support.",
+          variant: "destructive",
+        });
+      }
     });
     
     return () => unsubscribe();
-  }, [user]);
+  }, [user, toast]);
 
+  // Listen for assigned rides
+  useEffect(() => {
+    if (!user) return;
 
+    const q = query(
+      collection(db, 'rides'),
+      where('driverId', '==', user.uid),
+      where('status', 'in', ['accepted', 'in_progress'])
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      console.log('Driver dashboard - Received snapshot update for rides:', snapshot.size);
+    }, (error) => {
+      console.error('Error fetching assigned rides:', error);
+      // Handle permission denied error specifically
+      if (error.code === 'permission-denied') {
+        toast({
+          title: "Permission Error",
+          description: "You don't have permission to access ride data. Please contact support.",
+          variant: "destructive",
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user, toast]);
 
   // Get current location when going online
   const getCurrentLocation = () => {

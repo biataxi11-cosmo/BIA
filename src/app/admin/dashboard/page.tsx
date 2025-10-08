@@ -271,7 +271,7 @@ function AdminDashboardPage() {
                 <Settings className="mr-2 h-4 w-4" />
                 Revenue
               </span>
-              <span className="font-bold text-lg">${todayStats.revenue.toFixed(2)}</span>
+              <span className="font-bold text-lg">LKR {todayStats.revenue.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center p-4 bg-gradient-to-r from-primary/10 to-secondary/10 rounded-lg border border-white/20">
               <span className="text-muted-foreground flex items-center">

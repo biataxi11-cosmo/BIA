@@ -39,13 +39,20 @@ function AdminProfile() {
 
   return (
     <DashboardLayout desktopNav={<DesktopNav />}>
+      {/* Animated gradient background */}
+      <div className="fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/10 via-background to-secondary/10 animate-pulse"></div>
+        <div className="absolute top-0 right-0 w-1/3 h-1/3 bg-primary/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 left-0 w-1/3 h-1/3 bg-secondary/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
+      </div>
+
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Profile</h1>
           <p className="text-muted-foreground">Manage your admin profile information.</p>
         </div>
 
-        <Card>
+        <Card className="glass-card backdrop-blur-sm bg-background/30 border border-white/20 shadow-lg">
           <CardHeader>
             <CardTitle>Personal Information</CardTitle>
             <CardDescription>
@@ -71,7 +78,7 @@ function AdminProfile() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-card backdrop-blur-sm bg-background/30 border border-white/20 shadow-lg">
           <CardHeader>
             <CardTitle>Security</CardTitle>
             <CardDescription>

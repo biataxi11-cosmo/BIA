@@ -24,6 +24,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { useGoogleMaps } from '@/hooks/use-google-maps';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, doc, updateDoc, serverTimestamp, onSnapshot, query, where, GeoPoint } from 'firebase/firestore';
+import { getFareSettings, calculateFare } from '@/lib/fare-settings';
 
 const mapContainerStyle = {
   width: '100%',
@@ -724,7 +725,7 @@ export default function MapPage() {
           waypoints: waypoints,
           travelMode: google.maps.TravelMode.DRIVING,
         },
-        (result, status) => {
+        async (result, status) => {
           if (status === google.maps.DirectionsStatus.OK && result) {
             setDirections(result);
             
@@ -744,9 +745,17 @@ export default function MapPage() {
             setDistance(`${distanceInKm.toFixed(1)} km`);
             setDuration(`${durationInMinutes} min`);
             
-            // Calculate cost (50 LKR per km)
-            const calculatedCost = Math.round(distanceInKm * 50);
-            setCost(calculatedCost);
+            // Calculate cost using dynamic fare settings
+            try {
+              const fareSettings = await getFareSettings();
+              const calculatedCost = calculateFare(distanceInKm, fareSettings);
+              setCost(calculatedCost);
+            } catch (error) {
+              console.error('Error calculating fare:', error);
+              // Fallback to default calculation
+              const calculatedCost = Math.round(distanceInKm * 50);
+              setCost(calculatedCost);
+            }
           } else {
             console.error('Error fetching directions:', status);
             setDirections(null);
