@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { MapPin, Navigation, Flag, Car, User, CreditCard, X, Check, Locate, Plus, Minus } from 'lucide-react';
+import { MapPin, Navigation, Flag, Car, User, CreditCard, X, Check, Locate, Plus, Minus, ChevronUp, ChevronDown, Clock, Phone, Route, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -71,7 +71,9 @@ const MapContent = ({
   driversLoading,
   driversError,
   onMapClick,
-  selectingLocation
+  selectingLocation,
+  driverLocation, // Add driver location prop
+  tripStatus // Add tripStatus prop
 }: { 
   center: { lat: number; lng: number }; 
   pickup: { lat: number; lng: number } | null;
@@ -84,6 +86,8 @@ const MapContent = ({
   driversError: string | null;
   onMapClick?: (e: google.maps.MapMouseEvent) => void;
   selectingLocation: 'pickup' | 'dropoff' | null;
+  driverLocation: LatLng | null; // Add driver location prop
+  tripStatus: TripStatus; // Add tripStatus prop
 }) => {
   if (loadError) {
     return (
@@ -119,8 +123,12 @@ const MapContent = ({
           disableDefaultUI: true,
           zoomControl: true,
           streetViewControl: true,
+          gestureHandling: 'greedy', // Allow smooth panning and zooming
+          scrollwheel: true, // Enable scroll wheel zooming
+          draggable: true, // Enable dragging
+          keyboardShortcuts: false, // Disable keyboard shortcuts to prevent conflicts
         }}
-        onClick={onMapClick}
+        onClick={tripStatus === 'selecting' ? onMapClick : undefined} // Only allow map clicks when selecting
       >
         {pickup && <Marker position={pickup} icon={{
           path: google.maps.SymbolPath.CIRCLE,
@@ -175,6 +183,26 @@ const MapContent = ({
             }} 
           />
         ))}
+        {/* Show driver's live location if available */}
+        {driverLocation && (
+          <Marker 
+            position={driverLocation} 
+            icon={{
+              path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+              scale: 6,
+              fillColor: "#FF0000", // Red color for driver location
+              fillOpacity: 1,
+              strokeColor: "#FFFFFF",
+              strokeWeight: 2,
+            }} 
+            label={{
+              text: "D",
+              color: "white",
+              fontSize: "12px",
+              fontWeight: "bold"
+            }}
+          />
+        )}
       </GoogleMap>
       
       {/* Location selection indicator */}
@@ -220,6 +248,13 @@ const MapContent = ({
   );
 };
 
+// Shared configuration for Google Maps loader to prevent performance warnings
+const GOOGLE_MAPS_LIBRARIES: google.maps.Library[] = ['places'];
+const GOOGLE_MAPS_CONFIG = {
+  id: 'google-map-script',
+  googleMapsApiKey: '' // Will be set dynamically
+};
+
 const MapWithLoader = ({ 
   center, 
   pickup, 
@@ -230,7 +265,9 @@ const MapWithLoader = ({
   driversLoading,
   driversError,
   onMapClick,
-  selectingLocation
+  selectingLocation,
+  driverLocation, // Add driver location prop
+  tripStatus // Add tripStatus prop
 }: { 
   center: { lat: number; lng: number }; 
   pickup: { lat: number; lng: number } | null;
@@ -242,27 +279,53 @@ const MapWithLoader = ({
   driversError: string | null;
   onMapClick?: (e: google.maps.MapMouseEvent) => void;
   selectingLocation: 'pickup' | 'dropoff' | null;
+  driverLocation: LatLng | null; // Add driver location prop
+  tripStatus: TripStatus; // Add tripStatus prop
 }) => {
   const { isLoaded, loadError } = useJsApiLoader({
-    id: 'google-map-script-map-page',
+    ...GOOGLE_MAPS_CONFIG,
     googleMapsApiKey: apiKey,
-    libraries: ['places', 'routes']
+    libraries: GOOGLE_MAPS_LIBRARIES
   });
 
-  return (
-    <MapContent 
+  if (loadError) {
+    return <MapContent 
       center={center} 
-      pickup={pickup}
-      dropoffs={dropoffs} // Pass array instead of single dropoff
+      pickup={pickup} 
+      dropoffs={dropoffs} 
       directions={directions}
-      isLoaded={isLoaded} 
-      loadError={loadError} 
+      isLoaded={false}
+      loadError={loadError}
       onlineDrivers={onlineDrivers}
       driversLoading={driversLoading}
       driversError={driversError}
       onMapClick={onMapClick}
       selectingLocation={selectingLocation}
-    />
+      driverLocation={driverLocation}
+      tripStatus={tripStatus} // Pass tripStatus prop
+    />;
+  }
+
+  return (
+    <>
+      {isLoaded && (
+        <MapContent 
+          center={center} 
+          pickup={pickup} 
+          dropoffs={dropoffs} 
+          directions={directions}
+          isLoaded={true}
+          loadError={undefined}
+          onlineDrivers={onlineDrivers}
+          driversLoading={driversLoading}
+          driversError={driversError}
+          onMapClick={onMapClick}
+          selectingLocation={selectingLocation}
+          driverLocation={driverLocation}
+          tripStatus={tripStatus} // Pass tripStatus prop
+        />
+      )}
+    </>
   );
 };
 
@@ -305,6 +368,9 @@ export default function MapPage() {
   const [selectingLocation, setSelectingLocation] = useState<'pickup' | 'dropoff' | null>(null);
   const [dropoffInputs, setDropoffInputs] = useState<string[]>(['']);
   const [rideId, setRideId] = useState<string | null>(null);
+  const [driverLocation, setDriverLocation] = useState<LatLng | null>(null); // State for driver's live location
+  const [driverLocationUnsubscribe, setDriverLocationUnsubscribe] = useState<(() => void) | null>(null); // Unsubscribe function for driver location
+  const [isCollapsed, setIsCollapsed] = useState(false); // State for collapsed view
 
   // Get API key from environment variable
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
@@ -396,6 +462,61 @@ export default function MapPage() {
       unsubscribe();
     };
   }, []);
+
+  // Subscribe to driver location updates when ride is in progress
+  useEffect(() => {
+    if (!rideId || tripStatus !== 'in_progress') {
+      // Clean up previous subscription if it exists
+      if (driverLocationUnsubscribe) {
+        driverLocationUnsubscribe();
+        setDriverLocationUnsubscribe(null);
+      }
+      setDriverLocation(null);
+      return;
+    }
+
+    const rideRef = doc(db, 'rides', rideId);
+    const unsubscribe = onSnapshot(rideRef, (rideDoc) => {
+      if (rideDoc.exists()) {
+        const rideData = rideDoc.data();
+        const driverId = rideData.driverId;
+        
+        if (driverId) {
+          // Clean up previous subscription if it exists
+          if (driverLocationUnsubscribe) {
+            driverLocationUnsubscribe();
+            setDriverLocationUnsubscribe(null);
+          }
+          
+          // Subscribe to driver's location updates
+          const driverLocationRef = doc(db, 'driverLocations', driverId);
+          const newUnsubscribe = onSnapshot(driverLocationRef, (locationDoc) => {
+            if (locationDoc.exists()) {
+              const locationData = locationDoc.data();
+              if (locationData.location && locationData.location instanceof GeoPoint) {
+                const driverLoc = {
+                  lat: locationData.location.latitude,
+                  lng: locationData.location.longitude
+                };
+                setDriverLocation(driverLoc);
+              }
+            }
+          });
+          
+          setDriverLocationUnsubscribe(() => newUnsubscribe);
+        }
+      }
+    });
+    
+    // Return cleanup function
+    return () => {
+      unsubscribe();
+      if (driverLocationUnsubscribe) {
+        driverLocationUnsubscribe();
+        setDriverLocationUnsubscribe(null);
+      }
+    };
+  }, [rideId, tripStatus, driverLocationUnsubscribe]);
 
   // Only render map after component is mounted to avoid SSR issues
   useEffect(() => {
@@ -634,60 +755,73 @@ export default function MapPage() {
 
   // Function to handle map click
   const handleMapClick = (e: google.maps.MapMouseEvent) => {
-    if (selectingLocation && e.latLng) {
-      const location = {
-        lat: e.latLng.lat(),
-        lng: e.latLng.lng()
+    // Prevent map clicks after ride request is submitted
+    if (tripStatus !== 'selecting') return;
+    
+    if (selectingLocation === 'pickup') {
+      const newPickup = {
+        lat: e.latLng?.lat() || 0,
+        lng: e.latLng?.lng() || 0
       };
+      setPickup(newPickup);
+      setSelectingLocation(null);
+      setIsCurrentLocation(false);
       
-      if (selectingLocation === 'pickup') {
-        setPickup(location);
-        // Reverse geocode to get address
+      // Reverse geocode to get address
+      if (e.latLng) {
         const geocoder = new google.maps.Geocoder();
-        geocoder.geocode({ location }, (results, status) => {
+        geocoder.geocode({ location: e.latLng }, (results, status) => {
           if (status === 'OK' && results && results[0]) {
             setPickupValue(results[0].formatted_address);
-          } else {
-            setPickupValue(`Lat: ${location.lat.toFixed(6)}, Lng: ${location.lng.toFixed(6)}`);
           }
         });
-      } else if (selectingLocation === 'dropoff') {
-        // Reverse geocode to get address first
+      }
+    } else if (selectingLocation === 'dropoff') {
+      const newDropoff = {
+        lat: e.latLng?.lat() || 0,
+        lng: e.latLng?.lng() || 0
+      };
+      
+      // Find the first empty dropoff slot or add to the end
+      let emptyIndex = dropoffs.findIndex((d, i) => !d || (!d.lat && !d.lng));
+      if (emptyIndex === -1) {
+        // No empty slots, add to the end if we have space
+        if (dropoffs.length < maxDropoffs) {
+          emptyIndex = dropoffs.length;
+          setDropoffs([...dropoffs, newDropoff]);
+          setDropoffInputs([...dropoffInputs, '']);
+        } else {
+          // Replace the last dropoff if we've reached the limit
+          const newDropoffs = [...dropoffs];
+          newDropoffs[newDropoffs.length - 1] = newDropoff;
+          setDropoffs(newDropoffs);
+          
+          const newDropoffInputs = [...dropoffInputs];
+          newDropoffInputs[newDropoffInputs.length - 1] = '';
+          setDropoffInputs(newDropoffInputs);
+        }
+      } else {
+        // Fill the empty slot
+        const newDropoffs = [...dropoffs];
+        newDropoffs[emptyIndex] = newDropoff;
+        setDropoffs(newDropoffs);
+        
+        const newDropoffInputs = [...dropoffInputs];
+        newDropoffInputs[emptyIndex] = '';
+        setDropoffInputs(newDropoffInputs);
+      }
+      
+      setSelectingLocation(null);
+      
+      // Reverse geocode to get address
+      if (e.latLng) {
         const geocoder = new google.maps.Geocoder();
-        geocoder.geocode({ location }, (results, status) => {
-          const address = status === 'OK' && results && results[0] 
-            ? results[0].formatted_address 
-            : `Lat: ${location.lat.toFixed(6)}, Lng: ${location.lng.toFixed(6)}`;
-          
-          // Check if we have an empty dropoff field we can use (fields without valid coordinates)
-          // Consider a field empty if it has lat:0 and lng:0 (our initial state)
-          let emptyIndex = dropoffs.findIndex(d => d && d.lat === 0 && d.lng === 0);
-          
-          if (emptyIndex !== -1) {
-            // Use existing empty field
-            const newDropoffs = [...dropoffs];
-            newDropoffs[emptyIndex] = { ...location, address };
-            setDropoffs(newDropoffs);
-            
-            const newDropoffInputs = [...dropoffInputs];
-            newDropoffInputs[emptyIndex] = address;
-            setDropoffInputs(newDropoffInputs);
-          } else {
-            // Check if we can add a new field (only if all existing fields are filled and we haven't reached the limit)
-            const allFieldsFilled = dropoffs.every(d => d && d.lat !== 0 && d.lng !== 0);
-            if (allFieldsFilled && dropoffInputs.length < maxDropoffs) {
-              // Add new field for this dropoff
-              const newDropoffs = [...dropoffs, { ...location, address }];
-              setDropoffs(newDropoffs);
-              
-              const newDropoffInputs = [...dropoffInputs, address];
+        geocoder.geocode({ location: e.latLng }, (results, status) => {
+          if (status === 'OK' && results && results[0]) {
+            if (emptyIndex !== -1) {
+              const newDropoffInputs = [...dropoffInputs];
+              newDropoffInputs[emptyIndex] = results[0].formatted_address;
               setDropoffInputs(newDropoffInputs);
-            } else if (!allFieldsFilled) {
-              // Alert user that they need to fill all fields first
-              alert("Please fill all existing destination fields before adding a new one.");
-            } else {
-              // Reached max dropoffs
-              console.log("Maximum number of destinations reached.");
             }
           }
         });
@@ -999,6 +1133,7 @@ export default function MapPage() {
     setEta(null);
     setPickupValue('');
     setDropoffInputs(['']); // Reset to one empty input
+    setDriverLocation(null); // Reset driver location
   };
 
   // Use the last valid dropoff for centering the map, or default center
@@ -1053,6 +1188,8 @@ export default function MapPage() {
             driversError={driversError}
             onMapClick={handleMapClick}
             selectingLocation={selectingLocation}
+            driverLocation={driverLocation} // Pass driver location
+            tripStatus={tripStatus} // Pass tripStatus prop
           />
         ) : (
           <div className="flex items-center justify-center h-full">
@@ -1072,19 +1209,18 @@ export default function MapPage() {
       </div>
 
       {/* Location selection indicator */}
-      {selectingLocation && (
+      {selectingLocation && tripStatus === 'selecting' && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 bg-card text-card-foreground px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
           <p className="font-medium">
             {selectingLocation === 'pickup' 
               ? 'Click on the map to select pickup location' 
               : 'Click on the map to add destination stops'}
           </p>
-          {/* Removed Finish Adding Stops button */}
         </div>
       )}
 
       {/* Bottom Sheet */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 z-20">
+      <div className="absolute bottom-0 left-0 right-0 p-4 z-10">
         <Card className="w-full max-w-lg mx-auto shadow-2xl rounded-2xl">
           {tripStatus === 'selecting' && (
             <>
@@ -1100,18 +1236,19 @@ export default function MapPage() {
                       setIsCurrentLocation(false);
                     }}
                     onBlur={handlePickupBlur}
-                    disabled={!pickupReady}
+                    disabled={!pickupReady || tripStatus !== 'selecting'}
                     placeholder="Enter pickup location"
                     className="pl-10 pr-20"
                   />
-                  {/* Green location icon for pickup on the right side */}
+                  {/* Green location icon for pickup on the right side - disable after request is submitted */}
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
                     className={`absolute right-10 top-1/2 -translate-y-1/2 h-6 w-6 ${selectingLocation === 'pickup' ? 'text-green-600 bg-green-100 rounded-full' : 'text-green-500 hover:text-green-600'}`}
-                    onClick={() => setSelectingLocation(selectingLocation === 'pickup' ? null : 'pickup')}
+                    onClick={() => tripStatus === 'selecting' && setSelectingLocation(selectingLocation === 'pickup' ? null : 'pickup')}
                     title="Set pickup location on map"
+                    disabled={tripStatus !== 'selecting'}
                   >
                     <MapPin className="h-5 w-5" />
                   </Button>
@@ -1122,10 +1259,11 @@ export default function MapPage() {
                     className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground hover:text-foreground"
                     onClick={getCurrentLocation}
                     title="Use current location"
+                    disabled={tripStatus !== 'selecting'}
                   >
                     <Locate className="h-4 w-4" />
                   </Button>
-                  {pickupStatus === 'OK' && !isCurrentLocation && (
+                  {pickupStatus === 'OK' && !isCurrentLocation && tripStatus === 'selecting' && (
                     <div className="absolute z-10 w-full mt-1 bg-card border rounded-md shadow-lg max-h-60 overflow-y-auto">
                       {pickupData.map(({ place_id, structured_formatting }) => (
                         <div
@@ -1141,7 +1279,7 @@ export default function MapPage() {
                   )}
                 </div>
                 
-                {/* Multiple Dropoff Fields */}
+                {/* Multiple Dropoff Fields - Disable adding new stops after request is submitted */}
                 {dropoffInputs.map((dropoffValue, index) => (
                   <div key={index} className="relative">
                     {index === 0 ? (
@@ -1155,23 +1293,24 @@ export default function MapPage() {
                       value={dropoffValue}
                       onChange={(e) => handleDropoffInput(index, e)}
                       onBlur={() => handleDropoffBlur(index)}
-                      disabled={!dropoffAutocompleteHooks[index] || !dropoffAutocompleteHooks[index].ready}
+                      disabled={!dropoffAutocompleteHooks[index] || !dropoffAutocompleteHooks[index].ready || tripStatus !== 'selecting'}
                       placeholder={`Enter destination ${index + 1}`}
                       className="pl-10 pr-20"
                     />
-                    {/* Red location icon for dropoff on the right side */}
+                    {/* Red location icon for dropoff on the right side - disable after request is submitted */}
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
                       className={`absolute right-10 top-1/2 -translate-y-1/2 h-6 w-6 ${selectingLocation === 'dropoff' ? 'text-red-600 bg-red-100 rounded-full' : 'text-red-500 hover:text-red-600'}`}
-                      onClick={() => setSelectingLocation(selectingLocation === 'dropoff' ? null : 'dropoff')}
+                      onClick={() => tripStatus === 'selecting' && setSelectingLocation(selectingLocation === 'dropoff' ? null : 'dropoff')}
                       title="Set destination on map"
+                      disabled={tripStatus !== 'selecting'}
                     >
                       <Flag className="h-5 w-5" />
                     </Button>
-                    {/* Show remove button only for fields beyond the first that have values */}
-                    {index > 0 && dropoffValue && (
+                    {/* Show remove button only for fields beyond the first that have values - disable after request is submitted */}
+                    {index > 0 && dropoffValue && tripStatus === 'selecting' && (
                       <Button
                         type="button"
                         variant="ghost"
@@ -1183,10 +1322,11 @@ export default function MapPage() {
                         <Minus className="h-4 w-4" />
                       </Button>
                     )}
-                    {/* Show plus button only on the last field if it has a value and we haven't reached the limit */}
+                    {/* Show plus button only on the last field if it has a value and we haven't reached the limit - disable after request is submitted */}
                     {index === dropoffInputs.length - 1 && 
                      dropoffValue && 
-                     dropoffInputs.length < maxDropoffs && (
+                     dropoffInputs.length < maxDropoffs && 
+                     tripStatus === 'selecting' && (
                       <Button
                         type="button"
                         variant="ghost"
@@ -1203,7 +1343,7 @@ export default function MapPage() {
                         {dropoffAutocompleteHooks[index].suggestions.data.map((suggestion: Suggestion) => (
                           <div
                             key={suggestion.place_id}
-                            onClick={() => handleDropoffSelect(index, suggestion.structured_formatting.main_text + ', ' + suggestion.structured_formatting.secondary_text)}
+                            onClick={() => tripStatus === 'selecting' && handleDropoffSelect(index, suggestion.structured_formatting.main_text + ', ' + suggestion.structured_formatting.secondary_text)}
                             className="p-3 hover:bg-accent cursor-pointer border-b last:border-b-0"
                           >
                             <p className="font-medium">{suggestion.structured_formatting.main_text}</p>
@@ -1309,68 +1449,165 @@ export default function MapPage() {
           )}
 
           {tripStatus === 'in_progress' && (
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-semibold">On the way</h3>
-                <Navigation className="h-6 w-6 text-primary" />
-              </div>
-              <div className="flex items-center gap-4 mb-4">
-                <div className="bg-primary rounded-full p-2">
-                  <User className="h-6 w-6 text-primary-foreground" />
-                </div>
-                <div>
-                  <p className="font-medium">{selectedDriver?.name || 'Driver'}</p>
-                  <p className="text-sm text-muted-foreground">{selectedDriver?.rating} ★ ({Math.floor(Math.random() * 100) + 50} trips)</p>
-                </div>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-secondary rounded-lg mb-4">
-                <div>
-                  <span className="text-sm font-medium">
-                    {selectedDriver?.vehicleYear && selectedDriver?.vehicleMake && selectedDriver?.vehicleModel 
-                      ? `${selectedDriver.vehicleYear} ${selectedDriver.vehicleMake} ${selectedDriver.vehicleModel}` 
-                      : selectedDriver?.car || 'Unknown Vehicle'}
-                  </span>
-                  <span className="text-sm block">
-                    {selectedDriver?.licensePlate ? `License: ${selectedDriver.licensePlate}` : 'License: Unknown'}
-                  </span>
-                </div>
-                <span className="text-sm font-medium">{duration || 'N/A'}</span>
-              </div>
-              {selectedDriver?.phoneNumber && (
-                <div className="p-3 bg-secondary rounded-lg mb-4">
-                  <p className="text-sm">
-                    Contact: <a href={`tel:${selectedDriver.phoneNumber}`} className="text-primary hover:underline">{selectedDriver.phoneNumber}</a>
-                  </p>
-                </div>
-              )}
-              <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <MapPin className="h-4 w-4 text-green-500" />
-                  <span className="text-sm truncate">{pickupValue || 'Pickup location'}</span>
+            <CardContent className="p-0">
+              {/* Collapsible Header */}
+              <div 
+                className="flex items-center justify-between p-4 cursor-pointer border-b hover:bg-accent transition-colors"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+              >
+                <div className="flex items-center gap-2">
+                  <Navigation className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">On the way</h3>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Flag className="h-4 w-4 text-red-500" />
-                  <span className="text-sm truncate">
-                    {dropoffs.length > 0 
-                      ? dropoffs.map((d, i) => d?.address || `Destination ${i + 1}`).join(' → ') 
-                      : 'Destination'}
-                  </span>
+                  {selectedDriver && (
+                    <div className="flex items-center gap-1 text-sm bg-secondary px-2 py-1 rounded-full">
+                      <User className="h-4 w-4" />
+                      <span>{selectedDriver.name}</span>
+                    </div>
+                  )}
+                  {isCollapsed ? (
+                    <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                  )}
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 p-2 bg-secondary rounded-lg mb-4">
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">Distance</p>
-                  <p className="font-medium">{distance || 'N/A'}</p>
+              
+              {/* Collapsible Content */}
+              {!isCollapsed ? (
+                <div className="p-4 space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-primary rounded-full p-2">
+                      <User className="h-6 w-6 text-primary-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{selectedDriver?.name || 'Driver'}</p>
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <span>{selectedDriver?.rating} ★</span>
+                        <span>•</span>
+                        <span>{Math.floor(Math.random() * 100) + 50} trips</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-secondary rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Car className="h-5 w-5 text-muted-foreground" />
+                      <div>
+                        <span className="text-sm font-medium">
+                          {selectedDriver?.vehicleYear && selectedDriver?.vehicleMake && selectedDriver?.vehicleModel 
+                            ? `${selectedDriver.vehicleYear} ${selectedDriver.vehicleMake} ${selectedDriver.vehicleModel}` 
+                            : selectedDriver?.car || 'Unknown Vehicle'}
+                        </span>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <span>{selectedDriver?.licensePlate ? `License: ${selectedDriver.licensePlate}` : 'License: Unknown'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="flex items-center gap-1 text-sm font-medium">
+                        <Clock className="h-4 w-4" />
+                        <span>{duration || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {selectedDriver?.phoneNumber && (
+                    <div className="p-3 bg-secondary rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <a href={`tel:${selectedDriver.phoneNumber}`} className="text-primary hover:underline text-sm">
+                          {selectedDriver.phoneNumber}
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-green-500 rounded-full p-1">
+                        <MapPin className="h-3 w-3 text-white" />
+                      </div>
+                      <span className="text-sm truncate">{pickupValue || 'Pickup location'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="bg-red-500 rounded-full p-1">
+                        <Flag className="h-3 w-3 text-white" />
+                      </div>
+                      <span className="text-sm truncate">
+                        {dropoffs.length > 0 
+                          ? dropoffs.map((d, i) => d?.address || `Destination ${i + 1}`).join(' → ') 
+                          : 'Destination'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 p-2 bg-secondary rounded-lg">
+                    <div className="text-center p-2 bg-background rounded">
+                      <div className="flex justify-center">
+                        <Navigation className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Distance</p>
+                      <p className="font-medium text-sm">{distance || 'N/A'}</p>
+                    </div>
+                    <div className="text-center p-2 bg-background rounded">
+                      <div className="flex justify-center">
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Duration</p>
+                      <p className="font-medium text-sm">{duration || 'N/A'}</p>
+                    </div>
+                    <div className="text-center p-2 bg-background rounded">
+                      <div className="flex justify-center">
+                        <CreditCard className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">Cost</p>
+                      <p className="font-medium text-sm">LKR {cost || '0'}</p>
+                    </div>
+                  </div>
+                  {/* Show driver location tracking if available */}
+                  {driverLocation && (
+                    <div className="p-3 bg-primary/10 rounded-lg flex items-center gap-2">
+                      <Navigation className="h-4 w-4 text-primary" />
+                      <p className="text-sm">
+                        Driver location is being tracked in real-time
+                      </p>
+                    </div>
+                  )}
                 </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">Duration</p>
-                  <p className="font-medium">{duration || 'N/A'}</p>
+              ) : (
+                // Enhanced collapsed view with icons and essential information
+                <div className="p-4">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary rounded-full p-2">
+                        <User className="h-5 w-5 text-primary-foreground" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{selectedDriver?.name || 'Driver'}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Car className="h-3 w-3" />
+                            <span>{selectedDriver?.licensePlate || 'Unknown'}</span>
+                          </div>
+                          <span>•</span>
+                          <div className="flex items-center gap-1">
+                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                            <span>{selectedDriver?.rating || 'N/A'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="flex items-center gap-1 text-sm font-medium">
+                        <Clock className="h-4 w-4" />
+                        <span>{duration || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Navigation className="h-3 w-3" />
+                        <span>{distance || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <p className="text-xs text-muted-foreground">Cost</p>
-                  <p className="font-medium">LKR {cost || '0'}</p>
-                </div>
-              </div>
+              )}
             </CardContent>
           )}
           

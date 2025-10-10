@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { MapPin, Locate, Car, UserCheck, Home, List, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
+import { GoogleMap, Marker } from '@react-google-maps/api';
+import { useGoogleMapsLoader } from '@/hooks/use-google-maps-loader';
 import { useAuth } from '@/contexts/auth-context';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -43,15 +44,8 @@ export default function DriverDashboard() {
   const [onlineDrivers, setOnlineDrivers] = useState<Driver[]>([]);
   const [center, setCenter] = useState(defaultCenter);
 
-  // Get API key from environment variable
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-  
-  // Use our custom hook to ensure Google Maps is loaded
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: 'google-map-script-driver-dashboard',
-    googleMapsApiKey: apiKey,
-    libraries: ['places']
-  });
+  // Use our shared custom hook to ensure Google Maps is loaded consistently
+  const { isLoaded, loadError } = useGoogleMapsLoader();
 
   // Load online drivers from Firebase using driverLocations collection
   useEffect(() => {
