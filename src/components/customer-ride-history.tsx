@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { MapPin, Flag, User, Car, Phone, Star, Clock, Milestone, ArrowLeft, Calendar, DollarSign } from 'lucide-react';
 import { format } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { useRouter } from 'next/navigation';
 
 interface RideHistory {
   id: string;
@@ -44,6 +45,7 @@ interface RideHistory {
 
 export function CustomerRideHistory() {
   const { user } = useAuth();
+  const router = useRouter();
   const [rideHistory, setRideHistory] = useState<RideHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRide, setSelectedRide] = useState<RideHistory | null>(null);
@@ -209,6 +211,14 @@ export function CustomerRideHistory() {
     );
   }
 
+  // Function to view ride on map
+  const viewRideOnMap = (ride: RideHistory) => {
+    // Store ride information in localStorage or pass as query parameters
+    localStorage.setItem('viewRideId', ride.id);
+    // Navigate to the map page
+    router.push('/customer/map');
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-6">
@@ -269,152 +279,14 @@ export function CustomerRideHistory() {
                     </div>
                   )}
                 </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="border-srilankan-teal text-srilankan-teal hover:bg-srilankan-teal hover:text-white">
-                      View Details
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <Car className="h-5 w-5" />
-                        Ride Details
-                      </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-6">
-                      {/* Status and Cost */}
-                      <div className="flex justify-between items-center p-4 bg-secondary rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <Badge className={getStatusColor(ride.status)}>
-                            {getStatusIcon(ride.status)}
-                            <span className="ml-1">{getStatusText(ride.status)}</span>
-                          </Badge>
-                        </div>
-                        {ride.cost && (
-                          <div className="text-right">
-                            <p className="text-2xl font-bold text-primary">LKR {ride.cost}</p>
-                            <p className="text-sm text-muted-foreground">Total Fare</p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Trip Details */}
-                      <div>
-                        <h3 className="font-medium mb-3 flex items-center gap-2">
-                          <MapPin className="h-4 w-4" />
-                          Trip Details
-                        </h3>
-                        <div className="space-y-3">
-                          <div className="flex items-start gap-3">
-                            <div className="w-3 h-3 bg-green-500 rounded-full mt-1.5 flex-shrink-0"></div>
-                            <div>
-                              <p className="font-medium text-sm">Pickup Location</p>
-                              <p className="text-sm text-muted-foreground">{ride.pickup.address}</p>
-                            </div>
-                          </div>
-                          {ride.dropoffs.map((dropoff, index) => (
-                            <div key={index} className="flex items-start gap-3">
-                              <div className="w-3 h-3 bg-red-500 rounded-full mt-1.5 flex-shrink-0"></div>
-                              <div>
-                                <p className="font-medium text-sm">Destination {index + 1}</p>
-                                <p className="text-sm text-muted-foreground">{dropoff.address}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Driver Information */}
-                      {ride.driverName && (
-                        <div>
-                          <h3 className="font-medium mb-3 flex items-center gap-2">
-                            <User className="h-4 w-4" />
-                            Driver Information
-                          </h3>
-                          <div className="p-4 bg-secondary rounded-lg space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-medium">{ride.driverName}</span>
-                              {ride.driverRating && (
-                                <div className="flex items-center gap-1">
-                                  <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                                  <span className="text-sm">{ride.driverRating}</span>
-                                </div>
-                              )}
-                            </div>
-                            {ride.carModel && (
-                              <p className="text-sm text-muted-foreground">{ride.carModel}</p>
-                            )}
-                            {ride.carLicensePlate && (
-                              <p className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                                {ride.carLicensePlate}
-                              </p>
-                            )}
-                            {ride.driverPhone && (
-                              <a 
-                                href={`tel:${ride.driverPhone}`}
-                                className="flex items-center gap-2 text-sm text-primary hover:underline"
-                              >
-                                <Phone className="h-4 w-4" />
-                                {ride.driverPhone}
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Timeline */}
-                      <div>
-                        <h3 className="font-medium mb-3 flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />
-                          Timeline
-                        </h3>
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-3 text-sm">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <span>Requested: {format(ride.requestedAt, 'MMM d, yyyy h:mm a')}</span>
-                          </div>
-                          {ride.acceptedAt && (
-                            <div className="flex items-center gap-3 text-sm">
-                              <Clock className="h-4 w-4 text-muted-foreground" />
-                              <span>Accepted: {format(ride.acceptedAt, 'MMM d, yyyy h:mm a')}</span>
-                            </div>
-                          )}
-                          {ride.startedAt && (
-                            <div className="flex items-center gap-3 text-sm">
-                              <Clock className="h-4 w-4 text-muted-foreground" />
-                              <span>Started: {format(ride.startedAt, 'MMM d, yyyy h:mm a')}</span>
-                            </div>
-                          )}
-                          {ride.completedAt && (
-                            <div className="flex items-center gap-3 text-sm">
-                              <Clock className="h-4 w-4 text-muted-foreground" />
-                              <span>Completed: {format(ride.completedAt, 'MMM d, yyyy h:mm a')}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Trip Stats */}
-                      {(ride.distance || ride.duration) && (
-                        <div className="grid grid-cols-2 gap-4 p-4 bg-secondary rounded-lg">
-                          {ride.distance && (
-                            <div className="text-center">
-                              <p className="text-xs text-muted-foreground">Distance</p>
-                              <p className="font-medium">{ride.distance}</p>
-                            </div>
-                          )}
-                          {ride.duration && (
-                            <div className="text-center">
-                              <p className="text-xs text-muted-foreground">Duration</p>
-                              <p className="font-medium">{ride.duration}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="border-srilankan-teal text-srilankan-teal hover:bg-srilankan-teal hover:text-white"
+                  onClick={() => viewRideOnMap(ride)}
+                >
+                  View Details
+                </Button>
               </div>
             </CardContent>
           </Card>

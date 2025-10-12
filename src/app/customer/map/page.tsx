@@ -23,8 +23,9 @@ import { GoogleMap, Marker, DirectionsRenderer, useJsApiLoader } from '@react-go
 import { useAuth } from '@/contexts/auth-context';
 import { useGoogleMaps } from '@/hooks/use-google-maps';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, doc, updateDoc, serverTimestamp, onSnapshot, query, where, GeoPoint } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, serverTimestamp, onSnapshot, query, where, getDoc, GeoPoint } from 'firebase/firestore';
 import { getFareSettings, calculateFare } from '@/lib/fare-settings';
+
 
 const mapContainerStyle = {
   width: '100%',
@@ -249,7 +250,7 @@ const MapContent = ({
 };
 
 // Shared configuration for Google Maps loader to prevent performance warnings
-const GOOGLE_MAPS_LIBRARIES: google.maps.Library[] = ['places'];
+const GOOGLE_MAPS_LIBRARIES: ('places' | 'routes' | 'geometry' | 'drawing' | 'visualization')[] = ['places'];
 const GOOGLE_MAPS_CONFIG = {
   id: 'google-map-script',
   googleMapsApiKey: '' // Will be set dynamically
@@ -368,9 +369,10 @@ export default function MapPage() {
   const [selectingLocation, setSelectingLocation] = useState<'pickup' | 'dropoff' | null>(null);
   const [dropoffInputs, setDropoffInputs] = useState<string[]>(['']);
   const [rideId, setRideId] = useState<string | null>(null);
-  const [driverLocation, setDriverLocation] = useState<LatLng | null>(null); // State for driver's live location
-  const [driverLocationUnsubscribe, setDriverLocationUnsubscribe] = useState<(() => void) | null>(null); // Unsubscribe function for driver location
-  const [isCollapsed, setIsCollapsed] = useState(false); // State for collapsed view
+  const [driverLocation, setDriverLocation] = useState<LatLng | null>(null);
+  const [driverLocationUnsubscribe, setDriverLocationUnsubscribe] = useState<(() => void) | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isLoadingRide, setIsLoadingRide] = useState(true);
 
   // Get API key from environment variable
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
@@ -1023,6 +1025,236 @@ export default function MapPage() {
     }
   };
 
+  // Check for ongoing ride when component mounts
+  useEffect(() => {
+    if (!user) {
+      setIsLoadingRide(false);
+      return;
+    }
+    
+    console.log('Checking for ongoing rides for user:', user.uid);
+    
+    // First check if we're coming from the ride history page
+    const viewRideId = localStorage.getItem('viewRideId');
+    if (viewRideId) {
+      console.log('Viewing ride from history:', viewRideId);
+      // Remove the item from localStorage so it's not used again
+      localStorage.removeItem('viewRideId');
+      
+      // Fetch the specific ride
+      const fetchRide = async () => {
+        try {
+          const rideDoc = await getDoc(doc(db, 'rides', viewRideId));
+          if (rideDoc.exists()) {
+            const rideData = rideDoc.data();
+            
+            // Set the ride ID and status
+            setRideId(viewRideId);
+            
+            // Set the trip status based on the ride data
+            switch (rideData.status) {
+              case 'requested':
+                setTripStatus('requested');
+                break;
+              case 'driver_assigned':
+              case 'accepted':
+                setTripStatus('driver_assigned');
+                // Set driver information if available
+                if (rideData.driverId) {
+                  setSelectedDriver({
+                    id: rideData.driverId,
+                    name: rideData.driverName || 'Driver',
+                    rating: rideData.driverRating || 5.0,
+                    car: rideData.vehicle || 'Unknown Vehicle',
+                    licensePlate: rideData.licensePlate || 'Unknown',
+                    location: { lat: 0, lng: 0 },
+                    isOnline: true,
+                    phoneNumber: rideData.driverPhone || '',
+                    vehicleMake: rideData.vehicleMake || '',
+                    vehicleModel: rideData.vehicleModel || '',
+                    vehicleYear: rideData.vehicleYear || '',
+                    vehicleColor: rideData.vehicleColor || '',
+                  });
+                }
+                break;
+              case 'in_progress':
+                setTripStatus('in_progress');
+                // Set driver information if available
+                if (rideData.driverId) {
+                  setSelectedDriver({
+                    id: rideData.driverId,
+                    name: rideData.driverName || 'Driver',
+                    rating: rideData.driverRating || 5.0,
+                    car: rideData.vehicle || 'Unknown Vehicle',
+                    licensePlate: rideData.licensePlate || 'Unknown',
+                    location: { lat: 0, lng: 0 },
+                    isOnline: true,
+                    phoneNumber: rideData.driverPhone || '',
+                    vehicleMake: rideData.vehicleMake || '',
+                    vehicleModel: rideData.vehicleModel || '',
+                    vehicleYear: rideData.vehicleYear || '',
+                    vehicleColor: rideData.vehicleColor || '',
+                  });
+                }
+                break;
+              case 'completed':
+                setTripStatus('completed');
+                // Set driver information if available
+                if (rideData.driverId) {
+                  setSelectedDriver({
+                    id: rideData.driverId,
+                    name: rideData.driverName || 'Driver',
+                    rating: rideData.driverRating || 5.0,
+                    car: rideData.vehicle || 'Unknown Vehicle',
+                    licensePlate: rideData.licensePlate || 'Unknown',
+                    location: { lat: 0, lng: 0 },
+                    isOnline: true,
+                    phoneNumber: rideData.driverPhone || '',
+                    vehicleMake: rideData.vehicleMake || '',
+                    vehicleModel: rideData.vehicleModel || '',
+                    vehicleYear: rideData.vehicleYear || '',
+                    vehicleColor: rideData.vehicleColor || '',
+                  });
+                }
+                break;
+              case 'cancelled':
+                setTripStatus('selecting');
+                break;
+              default:
+                setTripStatus('selecting');
+            }
+            
+            // Set pickup and dropoff information
+            if (rideData.pickup) {
+              setPickup({
+                lat: rideData.pickup.lat,
+                lng: rideData.pickup.lng
+              });
+            }
+            
+            if (rideData.dropoffs) {
+              setDropoffs(rideData.dropoffs);
+              setDropoffInputs(rideData.dropoffs.map((d: any) => d.address || ''));
+            }
+            
+            // Set other ride information
+            setDistance(rideData.distance || null);
+            setDuration(rideData.duration || null);
+            setCost(rideData.cost || null);
+          }
+        } catch (error) {
+          console.error('Error fetching ride:', error);
+        } finally {
+          setIsLoadingRide(false);
+        }
+      };
+      
+      fetchRide();
+      return;
+    }
+    
+    // Query for rides that are not completed or cancelled for this customer
+    const q = query(
+      collection(db, 'rides'),
+      where('customerId', '==', user.uid),
+      where('status', 'in', ['requested', 'driver_assigned', 'in_progress'])
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      console.log('Ride query snapshot received, size:', snapshot.size);
+      
+      if (!snapshot.empty) {
+        // Get the most recent ride
+        const rideDoc = snapshot.docs[0];
+        const rideData = rideDoc.data();
+        const rideId = rideDoc.id;
+        
+        console.log('Found ongoing ride:', rideId, rideData.status);
+        
+        // Set the ride ID and status
+        setRideId(rideId);
+        
+        // Set the trip status based on the ride data
+        switch (rideData.status) {
+          case 'requested':
+            setTripStatus('requested');
+            break;
+          case 'driver_assigned':
+            setTripStatus('driver_assigned');
+            // Set driver information if available
+            if (rideData.driverId) {
+              setSelectedDriver({
+                id: rideData.driverId,
+                name: rideData.driverName || 'Driver',
+                rating: rideData.driverRating || 5.0,
+                car: rideData.vehicle || 'Unknown Vehicle',
+                licensePlate: rideData.licensePlate || 'Unknown',
+                location: { lat: 0, lng: 0 },
+                isOnline: true,
+                phoneNumber: rideData.driverPhone || '',
+                vehicleMake: rideData.vehicleMake || '',
+                vehicleModel: rideData.vehicleModel || '',
+                vehicleYear: rideData.vehicleYear || '',
+                vehicleColor: rideData.vehicleColor || '',
+              });
+            }
+            break;
+          case 'in_progress':
+            setTripStatus('in_progress');
+            // Set driver information if available
+            if (rideData.driverId) {
+              setSelectedDriver({
+                id: rideData.driverId,
+                name: rideData.driverName || 'Driver',
+                rating: rideData.driverRating || 5.0,
+                car: rideData.vehicle || 'Unknown Vehicle',
+                licensePlate: rideData.licensePlate || 'Unknown',
+                location: { lat: 0, lng: 0 },
+                isOnline: true,
+                phoneNumber: rideData.driverPhone || '',
+                vehicleMake: rideData.vehicleMake || '',
+                vehicleModel: rideData.vehicleModel || '',
+                vehicleYear: rideData.vehicleYear || '',
+                vehicleColor: rideData.vehicleColor || '',
+              });
+            }
+            break;
+          default:
+            setTripStatus('selecting');
+        }
+        
+        // Set pickup and dropoff information
+        if (rideData.pickup) {
+          setPickup({
+            lat: rideData.pickup.lat,
+            lng: rideData.pickup.lng
+          });
+        }
+        
+        if (rideData.dropoffs) {
+          setDropoffs(rideData.dropoffs);
+          setDropoffInputs(rideData.dropoffs.map((d: any) => d.address || ''));
+        }
+        
+        // Set other ride information
+        setDistance(rideData.distance || null);
+        setDuration(rideData.duration || null);
+        setCost(rideData.cost || null);
+      } else {
+        console.log('No ongoing rides found for user');
+      }
+      
+      // Mark loading as complete
+      setIsLoadingRide(false);
+    }, (error) => {
+      console.error('Error checking for ongoing rides:', error);
+      setIsLoadingRide(false);
+    });
+    
+    // Cleanup subscription
+    return () => unsubscribe();
+  }, [user]);
+
   // Listen for ride status updates
   useEffect(() => {
     if (!rideId) return;
@@ -1044,7 +1276,58 @@ export default function MapPage() {
               rating: rideData.driverRating || 5.0,
               car: rideData.vehicle || 'Unknown Vehicle',
               licensePlate: rideData.licensePlate || 'Unknown',
-              location: { lat: 0, lng: 0 }, // Will be updated with real location
+              location: { lat: 0, lng: 0 },
+              isOnline: true,
+              phoneNumber: rideData.driverPhone || '',
+              vehicleMake: rideData.vehicleMake || '',
+              vehicleModel: rideData.vehicleModel || '',
+              vehicleYear: rideData.vehicleYear || '',
+              vehicleColor: rideData.vehicleColor || '',
+            });
+            setTripStatus('driver_assigned');
+            break;
+          case 'driver_assigned':
+            setSelectedDriver({
+              id: rideData.driverId,
+              name: rideData.driverName || 'Driver',
+              rating: rideData.driverRating || 5.0,
+              car: rideData.vehicle || 'Unknown Vehicle',
+              licensePlate: rideData.licensePlate || 'Unknown',
+              location: { lat: 0, lng: 0 },
+              isOnline: true,
+              phoneNumber: rideData.driverPhone || '',
+              vehicleMake: rideData.vehicleMake || '',
+              vehicleModel: rideData.vehicleModel || '',
+              vehicleYear: rideData.vehicleYear || '',
+              vehicleColor: rideData.vehicleColor || '',
+            });
+            setTripStatus('driver_assigned');
+            break;
+          case 'in_progress':
+            setSelectedDriver({
+              id: rideData.driverId,
+              name: rideData.driverName || 'Driver',
+              rating: rideData.driverRating || 5.0,
+              car: rideData.vehicle || 'Unknown Vehicle',
+              licensePlate: rideData.licensePlate || 'Unknown',
+              location: { lat: 0, lng: 0 },
+              isOnline: true,
+              phoneNumber: rideData.driverPhone || '',
+              vehicleMake: rideData.vehicleMake || '',
+              vehicleModel: rideData.vehicleModel || '',
+              vehicleYear: rideData.vehicleYear || '',
+              vehicleColor: rideData.vehicleColor || '',
+            });
+            setTripStatus('in_progress');
+            break;
+          case 'completed':
+            setSelectedDriver({
+              id: rideData.driverId,
+              name: rideData.driverName || 'Driver',
+              rating: rideData.driverRating || 5.0,
+              car: rideData.vehicle || 'Unknown Vehicle',
+              licensePlate: rideData.licensePlate || 'Unknown',
+              location: { lat: 0, lng: 0 },
               isOnline: true,
               phoneNumber: rideData.driverPhone || '',
               vehicleMake: rideData.vehicleMake || '',
@@ -1167,6 +1450,17 @@ export default function MapPage() {
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
           <p className="text-muted-foreground">Loading Google Maps...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading state while checking for ongoing rides
+  if (isLoadingRide) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="text-center">
+          <p className="text-muted-foreground">Loading your ride information...</p>
         </div>
       </div>
     );
