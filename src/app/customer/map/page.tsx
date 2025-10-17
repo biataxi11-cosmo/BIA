@@ -373,6 +373,9 @@ export default function MapPage() {
   const [driverLocationUnsubscribe, setDriverLocationUnsubscribe] = useState<(() => void) | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLoadingRide, setIsLoadingRide] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'mobile' | null>(null);
+  const [rideStatus, setRideStatus] = useState<string>('');
+  const [driver, setDriver] = useState<Driver | null>(null);
 
   // Get API key from environment variable
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
@@ -1261,99 +1264,101 @@ export default function MapPage() {
     
     const rideRef = doc(db, 'rides', rideId);
     const unsubscribe = onSnapshot(rideRef, (doc) => {
-      if (doc.exists()) {
-        const rideData = doc.data();
-        console.log('Ride status updated:', rideData.status);
-        
-        switch (rideData.status) {
-          case 'requested':
-            setTripStatus('requested');
-            break;
-          case 'accepted':
-            setSelectedDriver({
-              id: rideData.driverId,
-              name: rideData.driverName || 'Driver',
-              rating: rideData.driverRating || 5.0,
-              car: rideData.vehicle || 'Unknown Vehicle',
-              licensePlate: rideData.licensePlate || 'Unknown',
-              location: { lat: 0, lng: 0 },
-              isOnline: true,
-              phoneNumber: rideData.driverPhone || '',
-              vehicleMake: rideData.vehicleMake || '',
-              vehicleModel: rideData.vehicleModel || '',
-              vehicleYear: rideData.vehicleYear || '',
-              vehicleColor: rideData.vehicleColor || '',
-            });
-            setTripStatus('driver_assigned');
-            break;
-          case 'driver_assigned':
-            setSelectedDriver({
-              id: rideData.driverId,
-              name: rideData.driverName || 'Driver',
-              rating: rideData.driverRating || 5.0,
-              car: rideData.vehicle || 'Unknown Vehicle',
-              licensePlate: rideData.licensePlate || 'Unknown',
-              location: { lat: 0, lng: 0 },
-              isOnline: true,
-              phoneNumber: rideData.driverPhone || '',
-              vehicleMake: rideData.vehicleMake || '',
-              vehicleModel: rideData.vehicleModel || '',
-              vehicleYear: rideData.vehicleYear || '',
-              vehicleColor: rideData.vehicleColor || '',
-            });
-            setTripStatus('driver_assigned');
-            break;
-          case 'in_progress':
-            setSelectedDriver({
-              id: rideData.driverId,
-              name: rideData.driverName || 'Driver',
-              rating: rideData.driverRating || 5.0,
-              car: rideData.vehicle || 'Unknown Vehicle',
-              licensePlate: rideData.licensePlate || 'Unknown',
-              location: { lat: 0, lng: 0 },
-              isOnline: true,
-              phoneNumber: rideData.driverPhone || '',
-              vehicleMake: rideData.vehicleMake || '',
-              vehicleModel: rideData.vehicleModel || '',
-              vehicleYear: rideData.vehicleYear || '',
-              vehicleColor: rideData.vehicleColor || '',
-            });
-            setTripStatus('in_progress');
-            break;
-          case 'completed':
-            setSelectedDriver({
-              id: rideData.driverId,
-              name: rideData.driverName || 'Driver',
-              rating: rideData.driverRating || 5.0,
-              car: rideData.vehicle || 'Unknown Vehicle',
-              licensePlate: rideData.licensePlate || 'Unknown',
-              location: { lat: 0, lng: 0 },
-              isOnline: true,
-              phoneNumber: rideData.driverPhone || '',
-              vehicleMake: rideData.vehicleMake || '',
-              vehicleModel: rideData.vehicleModel || '',
-              vehicleYear: rideData.vehicleYear || '',
-              vehicleColor: rideData.vehicleColor || '',
-            });
-            setTripStatus('driver_assigned');
-            break;
-          case 'in_progress':
-            setTripStatus('in_progress');
-            break;
-          case 'completed':
-            setTripStatus('completed');
-            break;
-          case 'cancelled':
-            alert('Your ride request was cancelled.');
-            setTripStatus('selecting');
-            setRideId(null);
-            break;
-        }
+      const rideData = doc.data();
+      if (rideData) {
+        setRideStatus(rideData.status);
+        setDriver(rideData.driver);
       }
     });
-    
+
     return () => unsubscribe();
   }, [rideId]);
+
+  // Function to handle ride cancellation
+  const handleCancelRide = () => {
+    if (!rideId) return;
+    
+    const rideRef = doc(db, 'rides', rideId);
+    updateDoc(rideRef, {
+      status: 'cancelled',
+      cancelledAt: serverTimestamp(),
+    })
+      .then(() => {
+        console.log('Ride cancelled successfully');
+        resetTrip();
+      })
+      .catch((error) => {
+        console.error('Error cancelling ride:', error);
+        alert('Failed to cancel ride. Please try again.');
+      });
+  };
+
+  // Function to handle ride completion
+  const handleCompleteRide = () => {
+    if (!rideId) return;
+    
+    const rideRef = doc(db, 'rides', rideId);
+    updateDoc(rideRef, {
+      status: 'completed',
+      completedAt: serverTimestamp(),
+    })
+      .then(() => {
+        console.log('Ride completed successfully');
+        resetTrip();
+      })
+      .catch((error) => {
+        console.error('Error completing ride:', error);
+        alert('Failed to complete ride. Please try again.');
+      });
+  };
+
+  // Function to reset trip state
+  const resetTrip = () => {
+    setPickup(null);
+    setDropoffs([{ lat: 0, lng: 0, address: '' }]);
+    setTripStatus('selecting');
+    setDirections(null);
+    setDistance(null);
+    setDuration(null);
+    setCost(null);
+    setRideId(null);
+    setSelectedDriver(null);
+    setRejectedDrivers([]);
+    setEta(null);
+    setIsCurrentLocation(false);
+    setSelectingLocation(null);
+    setDropoffInputs(['']);
+    setDriverLocation(null);
+    setDriverLocationUnsubscribe(null);
+    setIsCollapsed(false);
+    setPaymentMethod(null);
+  };
+
+  // Function to handle payment confirmation
+  const handleConfirmPayment = () => {
+    // In a real app, this would process the payment
+    if (!paymentMethod) {
+      alert('Please select a payment method');
+      return;
+    }
+    
+    // Process payment based on selected method
+    switch (paymentMethod) {
+      case 'cash':
+        alert('Cash payment confirmed! Please pay the driver.');
+        break;
+      case 'card':
+        alert('Card payment processed successfully!');
+        break;
+      case 'mobile':
+        alert('Mobile payment processed successfully!');
+        break;
+    }
+    
+    resetTrip();
+  };
+
+  
 
   const handleDriverRejection = () => {
     setTripStatus('driver_rejected');
@@ -1395,28 +1400,6 @@ export default function MapPage() {
   const handleEndTrip = () => {
     // In a real app, this would update the trip status in the backend
     setTripStatus('completed');
-  };
-
-  const handleConfirmPayment = () => {
-    // In a real app, this would process the payment
-    alert('Payment confirmed! Trip completed.');
-    resetTrip();
-  };
-
-  const resetTrip = () => {
-    setPickup(null);
-    setDropoffs([{ lat: 0, lng: 0, address: '' }]); // Reset to one empty dropoff
-    setDirections(null);
-    setDistance(null);
-    setDuration(null);
-    setCost(null);
-    setTripStatus('selecting');
-    setSelectedDriver(null);
-    setRejectedDrivers([]);
-    setEta(null);
-    setPickupValue('');
-    setDropoffInputs(['']); // Reset to one empty input
-    setDriverLocation(null); // Reset driver location
   };
 
   // Use the last valid dropoff for centering the map, or default center
@@ -1806,7 +1789,7 @@ export default function MapPage() {
                     </div>
                   </div>
                   {selectedDriver?.phoneNumber && (
-                    <div className="p-3 bg-secondary rounded-lg">
+                    <div className="p-3 bg-secondary rounded-lg mb-4">
                       <div className="flex items-center gap-2">
                         <Phone className="h-4 w-4 text-muted-foreground" />
                         <a href={`tel:${selectedDriver.phoneNumber}`} className="text-primary hover:underline text-sm">
@@ -1910,9 +1893,9 @@ export default function MapPage() {
               <div className="text-center mb-4">
                 <CreditCard className="h-12 w-12 text-primary mx-auto mb-2" />
                 <h3 className="text-xl font-semibold">Trip Completed</h3>
-                <p className="text-muted-foreground">Please confirm payment</p>
+                <p className="text-muted-foreground">Please select a payment method</p>
               </div>
-              <div className="space-y-2 mb-4">
+              <div className="space-y-4 mb-4">
                 <div className="flex justify-between">
                   <span>Distance:</span>
                   <span className="font-medium">{distance || 'N/A'}</span>
@@ -1926,7 +1909,43 @@ export default function MapPage() {
                   <span>LKR {cost || '0'}</span>
                 </div>
               </div>
-              <Button onClick={handleConfirmPayment} className="w-full">
+              
+              {/* Payment Method Selection */}
+              <div className="mb-6">
+                <h4 className="font-medium mb-3">Select Payment Method</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <Button
+                    variant={paymentMethod === 'cash' ? 'default' : 'outline'}
+                    className="flex flex-col items-center justify-center h-20"
+                    onClick={() => setPaymentMethod('cash')}
+                  >
+                    <CreditCard className="h-6 w-6 mb-1" />
+                    <span className="text-xs">Cash</span>
+                  </Button>
+                  <Button
+                    variant={paymentMethod === 'card' ? 'default' : 'outline'}
+                    className="flex flex-col items-center justify-center h-20"
+                    onClick={() => setPaymentMethod('card')}
+                  >
+                    <CreditCard className="h-6 w-6 mb-1" />
+                    <span className="text-xs">Card</span>
+                  </Button>
+                  <Button
+                    variant={paymentMethod === 'mobile' ? 'default' : 'outline'}
+                    className="flex flex-col items-center justify-center h-20"
+                    onClick={() => setPaymentMethod('mobile')}
+                  >
+                    <Phone className="h-6 w-6 mb-1" />
+                    <span className="text-xs">Mobile</span>
+                  </Button>
+                </div>
+              </div>
+              
+              <Button 
+                onClick={handleConfirmPayment} 
+                className="w-full"
+                disabled={!paymentMethod}
+              >
                 Confirm Payment
               </Button>
             </CardContent>
